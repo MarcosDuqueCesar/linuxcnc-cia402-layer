@@ -1,0 +1,2 @@
+# Enable HALUI so we can control Machine On / E-Stop from HAL (and later from OPC bridge)
+loadusr -W halui -ini /home/welding/linuxcnc/configs/opc_validation/opc_validation.ini

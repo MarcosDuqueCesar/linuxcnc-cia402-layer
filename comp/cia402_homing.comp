@@ -1,0 +1,239 @@
+component cia402_homing "CiA402 homing UT adapter (short names to satisfy HAL limits)";
+
+pin in  bit   home;      // Execute
+pin in  bit   enable;    // Gating from PDS (OP_ENABLED)
+
+pin in  float cmd;
+pin in  float scale;
+pin in  s32   ap;
+
+pin in  u32   sw;
+pin in  s32   omd;
+
+pin out u32   cw;
+pin out s32   om;
+pin out s32   tp;
+
+pin out bit   homing;
+pin out bit   homed;
+pin out bit   done_p;
+
+param rw u32  done_m  = 0;
+param rw u32  done_v  = 0;
+param rw u32  err_m   = 0;
+param rw u32  err_v   = 0;
+
+param rw u32  start_pulse = 1;
+param rw bit  hold        = 1;
+param rw u32  done_pulse_cycles = 50;
+
+pin out s32   state;
+pin out s32   reason;
+
+pin out bit   exec_rise;
+pin out bit   exec_fall;
+
+pin out bit   start_out;
+pin out bit   done_lat;
+pin out bit   err_lat;
+
+function update;
+license "MIT";
+
+;;
+
+#include <stdint.h>
+
+enum {
+    S_IDLE        = 0,
+    S_WAIT_OMD6   = 10,
+    S_SEND_START  = 11,
+    S_WAIT_DONE   = 12,
+    S_DONE        = 13,
+    S_ERROR       = 15
+};
+
+enum {
+    R_NONE        = 0,
+    R_IDLE        = 1,
+    R_WAIT_OMD6   = 3,
+    R_START_PULSE = 4,
+    R_WAIT_DONE   = 5,
+    R_DONE        = 6,
+    R_ERROR       = 7
+};
+
+static int      homed_old;
+static uint32_t start_cnt;
+static int      exec_prev;
+static int      start_sent;
+static int      done_latched;
+static int      err_latched;
+static uint32_t done_p_cnt;
+
+static inline int bit_is_set_u32(uint32_t v, int bit)
+{
+    return (v >> bit) & 1u;
+}
+
+FUNCTION(update)
+{
+    (void)period;
+
+    /* Effective Execute = home AND enable */
+    int exec = (home && enable);
+
+    cw = 0;
+    om = 8;
+
+    exec_rise = 0;
+    exec_fall = 0;
+    start_out = 0;
+
+    if (hold && exec) {
+        tp = ap;
+    } else {
+        float s = (scale != 0.0f) ? scale : 1.0f;
+        tp = (int32_t)(cmd * s);
+    }
+
+    if (exec) {
+        om = 6;
+    }
+
+    int exec_rise_local = (exec && !exec_prev);
+    int exec_fall_local = (!exec && exec_prev);
+    exec_prev = exec;
+
+    exec_rise = exec_rise_local ? 1 : 0;
+    exec_fall = exec_fall_local ? 1 : 0;
+
+    if (!exec) {
+
+        start_cnt    = 0;
+        start_sent   = 0;
+        done_latched = 0;
+        err_latched  = 0;
+
+        homed_old    = 0;
+        done_p_cnt   = 0;
+
+        homed        = 0;
+        homing       = 0;
+        done_p       = 0;
+
+        done_lat     = 0;
+        err_lat      = 0;
+
+        state        = S_IDLE;
+        reason       = R_IDLE;
+        return;
+    }
+
+    if (exec_rise_local) {
+        start_cnt    = 0;
+        start_sent   = 0;
+        done_latched = 0;
+        err_latched  = 0;
+        done_p_cnt   = 0;
+        state        = S_WAIT_OMD6;
+    }
+
+    if (state == S_IDLE) {
+        state = S_WAIT_OMD6;
+    }
+
+    int done_match = 0;
+    int err_match  = 0;
+
+    if (omd == 6) {
+        uint32_t st = sw;
+
+        if (done_m != 0) {
+            done_match = ((st & done_m) == done_v);
+            err_match  = (err_m != 0) ? ((st & err_m) == err_v) : 0;
+        } else {
+            done_match = bit_is_set_u32(st, 10) && bit_is_set_u32(st, 12);
+            err_match  = 0;
+        }
+    }
+
+    switch (state) {
+
+    case S_WAIT_OMD6:
+        reason = R_WAIT_OMD6;
+        if (omd == 6) {
+            state = S_SEND_START;
+        }
+        break;
+
+    case S_SEND_START:
+        reason = R_START_PULSE;
+
+        if (!start_sent && !done_latched && !err_latched) {
+            if (start_cnt < start_pulse) {
+                start_out = 1;
+                start_cnt++;
+                if (start_cnt >= start_pulse) {
+                    start_sent = 1;
+                }
+            } else {
+                start_sent = 1;
+            }
+        }
+
+        if (start_sent) {
+            state = S_WAIT_DONE;
+        }
+        break;
+
+    case S_WAIT_DONE:
+        reason = R_WAIT_DONE;
+
+        if (!err_latched && err_match) {
+            err_latched = 1;
+            state = S_ERROR;
+            break;
+        }
+
+        if (!done_latched && start_sent && done_match && !err_match) {
+            done_latched = 1;
+            state = S_DONE;
+        }
+        break;
+
+    case S_DONE:
+        reason = R_DONE;
+        break;
+
+    case S_ERROR:
+        reason = R_ERROR;
+        break;
+
+    default:
+        state  = S_WAIT_OMD6;
+        reason = R_WAIT_OMD6;
+        break;
+    }
+
+    homed  = (done_latched && !err_latched);
+    homing = (exec && !done_latched && !err_latched);
+
+    done_lat = done_latched ? 1 : 0;
+    err_lat  = err_latched ? 1 : 0;
+
+    if (homed && !homed_old) {
+        uint32_t n = done_pulse_cycles;
+        if (n == 0) n = 1;
+        done_p_cnt = n;
+    }
+
+    if (done_p_cnt > 0) {
+        done_p = 1;
+        done_p_cnt--;
+    } else {
+        done_p = 0;
+    }
+
+    homed_old = homed;
+}

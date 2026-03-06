@@ -1,0 +1,86 @@
+# --- Stub + UT adapter wiring (modular, with PDS manager) ---
+#
+# Layers:
+#   1) cia402_pds         -> owns base 6040 bits (cw-pds) and gate (op-enabled)
+#   2) ut (cia402_homing) -> homing manager; outputs only start-out (bit4 request)
+#   3) cia402_cw_compose  -> cw-final = cw-pds | (start4 ? 0x10 : 0)
+#   4) stub               -> simulated CiA402 drive
+#
+# Execution order (important for deterministic behavior):
+#   pds -> ut -> composer -> stub
+#
+
+loadrt cia402_stub       names=stub
+loadrt cia402_pds        names=pds
+loadrt cia402_homing     names=ut
+loadrt cia402_cw_compose names=cwcomp
+
+addf pds.update    servo-thread
+addf ut.update     servo-thread
+addf cwcomp.update servo-thread
+addf stub.update   servo-thread
+
+
+# ------------------------------------------------------------------
+# --- PDS manager inputs ---
+# ------------------------------------------------------------------
+
+setp pds.enable TRUE
+setp pds.quick-stop FALSE
+setp pds.disable FALSE
+setp pds.fault-reset FALSE
+
+
+# ------------------------------------------------------------------
+# --- Statusword fanout ---
+# ------------------------------------------------------------------
+
+net sw  stub.out-statusword      => pds.sw  ut.sw
+net omd stub.out-opmode-display  => ut.omd
+net ap  stub.out-actual-position => ut.ap
+
+
+# ------------------------------------------------------------------
+# --- GATING ---
+# ------------------------------------------------------------------
+
+net pds-ok  pds.op-enabled  => ut.enable
+
+
+# ------------------------------------------------------------------
+# --- UT outputs / requests ---
+# ------------------------------------------------------------------
+
+net om  ut.om  => stub.in-opmode
+net tp  ut.tp  => stub.in-target-position
+
+
+# ------------------------------------------------------------------
+# --- Compose final controlword ---
+# ------------------------------------------------------------------
+
+net start4 ut.start-out     => cwcomp.start4
+net cw_pds pds.cw-pds       => cwcomp.cw-pds
+net cw     cwcomp.cw-final  => stub.in-controlword
+
+
+# ------------------------------------------------------------------
+# --- UT setup ---
+# ------------------------------------------------------------------
+
+setp ut.scale 1000
+setp ut.cmd   0
+setp ut.hold TRUE
+
+setp ut.done-m 0x1400
+setp ut.done-v 0x1400
+setp ut.start-pulse 1
+
+
+# ------------------------------------------------------------------
+# --- Stub setup (SIM parameters) ---
+# ------------------------------------------------------------------
+
+setp stub.opmode-apply-delay-cycles 20
+setp stub.homing-run-cycles         50
+setp stub.done-hold-cycles          30

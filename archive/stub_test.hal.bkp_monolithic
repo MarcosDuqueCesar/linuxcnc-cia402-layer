@@ -1,0 +1,29 @@
+# --- Stub + UT adapter wiring (runs inside LinuxCNC session) ---
+
+loadrt cia402_drive_stub names=stub
+loadrt c402hu names=ut
+
+addf stub.update servo-thread
+addf ut.update servo-thread
+
+# UT -> stub
+net cw  ut.cw  => stub.in-controlword
+net om  ut.om  => stub.in-opmode
+net tp  ut.tp  => stub.in-target-position
+
+# stub -> UT
+net sw  stub.out-statusword      => ut.sw
+net omd stub.out-opmode-display  => ut.omd
+net ap  stub.out-actual-position => ut.ap
+
+# setup
+setp ut.scale 1000
+setp ut.cmd   0
+
+setp stub.opmode-apply-delay-cycles 20
+setp stub.homing-run-cycles        50
+setp stub.done-hold-cycles         30
+
+setp ut.done-m 0x1400
+setp ut.done-v 0x1400
+setp ut.start-pulse 1

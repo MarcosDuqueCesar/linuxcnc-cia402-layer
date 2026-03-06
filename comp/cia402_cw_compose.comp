@@ -1,0 +1,28 @@
+component cia402_cw_compose "Compose CiA402 6040 controlword from PDS base + homing start bit4";
+
+/*
+  Purpose:
+    Make 6040 ownership explicit by composing:
+      cw_final = cw_pds | (start4 ? 0x0010 : 0)
+
+  Inputs:
+    cw_pds  : base controlword from PDS manager (enable/disable/fault reset/quick stop)
+    start4  : homing start request (bit4 pulse) from homing manager
+
+  Output:
+    cw_final: final controlword to drive (6040)
+*/
+
+pin in  u32 cw_pds;
+pin in  bit start4;
+pin out u32 cw_final;
+
+function update;
+license "MIT";
+
+;;
+
+FUNCTION(update)
+{
+    cw_final = cw_pds | (start4 ? (1u << 4) : 0u);
+}

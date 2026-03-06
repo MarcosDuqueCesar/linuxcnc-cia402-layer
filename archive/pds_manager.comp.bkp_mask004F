@@ -1,0 +1,92 @@
+component pds_manager "CiA402 PDS state manager (industrial decode)";
+
+pin in  u32 sw            "Statusword 6041";
+pin in  bit enable        "Request enable";
+pin in  bit disable       "Request disable";
+pin in  bit quick_stop    "Request quick stop";
+pin in  bit fault_reset   "Fault reset request";
+
+pin out u32 cw_pds        "Base controlword 6040";
+pin out bit op_enabled    "True when drive is in Operation Enabled";
+pin out bit fault         "True when fault detected";
+pin out s32 state         "Decoded state";
+pin out s32 reason        "Debug reason code";
+
+param rw u32 sw_mask = 0x004F "Mask for state decode (industrial)";
+
+function update;
+license "MIT";
+
+;;
+
+#include <rtapi.h>
+
+#define CMD_SHUTDOWN              0x0006
+#define CMD_SWITCH_ON             0x0007
+#define CMD_ENABLE_OPERATION      0x000F
+#define CMD_DISABLE_VOLTAGE       0x0000
+#define CMD_QUICK_STOP            0x0002
+#define CMD_FAULT_RESET           0x0080
+
+#define ST_NOT_READY              0x0000
+#define ST_SWITCH_ON_DISABLED     0x0040
+#define ST_READY_TO_SWITCH_ON     0x0021
+#define ST_SWITCHED_ON            0x0023
+#define ST_OPERATION_ENABLED      0x0027
+#define ST_FAULT                  0x0008
+
+FUNCTION(update)
+{
+    u32 st;
+
+    st = sw & sw_mask;
+
+    /* Fault detection */
+    fault = (sw & 0x0008) != 0;
+
+    if (fault) {
+        cw_pds = fault_reset ? CMD_FAULT_RESET : CMD_DISABLE_VOLTAGE;
+        op_enabled = 0;
+        state = ST_FAULT;
+        reason = 99;
+        return;
+    }
+
+    /* Industrial Operation Enabled detection */
+    if ( (st & 0x0007) == 0x0007 ) {
+        op_enabled = 1;
+        cw_pds = CMD_ENABLE_OPERATION;
+        state = ST_OPERATION_ENABLED;
+        reason = 12;
+        return;
+    }
+
+    op_enabled = 0;
+
+    switch (st) {
+
+        case ST_SWITCH_ON_DISABLED:
+            cw_pds = enable ? CMD_SHUTDOWN : CMD_DISABLE_VOLTAGE;
+            state = ST_SWITCH_ON_DISABLED;
+            reason = 1;
+            break;
+
+        case ST_READY_TO_SWITCH_ON:
+            cw_pds = CMD_SWITCH_ON;
+            state = ST_READY_TO_SWITCH_ON;
+            reason = 2;
+            break;
+
+        case ST_SWITCHED_ON:
+            cw_pds = CMD_ENABLE_OPERATION;
+            state = ST_SWITCHED_ON;
+            reason = 3;
+            break;
+
+        default:
+            cw_pds = CMD_DISABLE_VOLTAGE;
+            state = st;
+            reason = 99;
+            break;
+    }
+}
