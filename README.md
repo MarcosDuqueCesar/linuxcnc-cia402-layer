@@ -94,15 +94,17 @@ Machine safety policy should not be embedded inside protocol logic.
 
 The intended architecture separates layers clearly:
 
+```
 LinuxCNC motion
-↓
+      ↓
 machine_safety_gate
-↓
+      ↓
 CiA402 semantic layer
-↓
+      ↓
 transport adapter
-↓
+      ↓
 drive / fieldbus
+```
 
 **Important note**
 
@@ -248,11 +250,13 @@ servo-thread: 1 kHz
 
 Execution order:
 
+```
 machine_safety_gate
 → cia402_pds
 → cia402_homing
 → cia402_cw_compose
 → cia402_stub
+```
 
 LinuxCNC HAL executes functions sequentially according to addf order.
 
@@ -315,4 +319,29 @@ Servo thread frequency used for testing:
 
 Current state:
 
-* CiA402 PDS state machine imp
+* CiA402 PDS state machine implemented
+* deterministic controlword ownership
+* homing supervision logic
+* HAL drive stub for simulation testing
+
+Next milestone:
+
+integration with real EtherCAT drives via lcec.
+
+---
+
+# Future Work
+
+Next steps:
+
+* finalize machine safety gate layer
+* implement EtherCAT adapter (lcec backend)
+* test with real CiA402 drives
+* Mesa hardware integration example
+* additional CiA402 operation modes
+
+---
+
+# License
+
+MIT License
