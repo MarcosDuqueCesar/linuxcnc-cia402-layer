@@ -2,6 +2,15 @@
 
 Transport-agnostic and drive-agnostic CiA402 semantic layer for LinuxCNC.
 
+⚠️ Experimental project
+
+This repository explores a modular CiA402 semantic layer for LinuxCNC.
+
+The current implementation has been validated in simulation using a HAL
+drive stub. Real hardware integration (EtherCAT / lcec) is the next step.
+
+The architecture is still evolving.
+
 This project implements a modular HAL-based architecture that separates:
 
 - machine safety policy
