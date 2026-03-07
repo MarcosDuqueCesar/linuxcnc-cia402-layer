@@ -27,7 +27,8 @@ The same semantic layer can work with:
 - future Mesa integrations
 - other transports
 
-This repository currently focuses on validating the architecture in simulation.
+This repository currently focuses on validating the architecture in simulation
+before integrating with real EtherCAT hardware.
 
 ---
 
