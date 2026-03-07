@@ -110,6 +110,34 @@ safety functions**.
 
 # Current Components
 
+## machine_safety_gate.comp
+
+Machine policy gate placed between LinuxCNC motion and the CiA402 layer.
+
+Responsibilities:
+
+* gate enable requests
+* gate fault reset requests
+* gate homing requests
+* gate motion permissions
+
+The gate enforces machine-level conditions such as:
+
+* E-stop state
+* machine power state
+* drive readiness
+
+It prevents the CiA402 layer from enabling drives when the machine
+is not in a valid operational state.
+
+Important:
+
+This component implements machine policy only.
+It does not implement the CiA402 protocol and does not replace
+hardware safety systems such as E-stop chains or STO.
+
+---
+
 ## cia402_pds.comp
 
 CiA402 Power Drive System state manager.
@@ -207,7 +235,8 @@ servo-thread: 1 kHz
 
 Execution order:
 
-cia402_pds
+machine_safety_gate
+→ cia402_pds
 → cia402_homing
 → cia402_cw_compose
 → cia402_stub
@@ -227,6 +256,7 @@ the architecture remains deterministic.
 # Repository Layout
 
 comp/
+machine_safety_gate.comp
 cia402_pds.comp
 cia402_homing.comp
 cia402_cw_compose.comp
