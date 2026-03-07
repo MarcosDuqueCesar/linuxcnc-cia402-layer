@@ -2,7 +2,7 @@
 
 Modular CiA402 semantic layer for LinuxCNC (EtherCAT and other transports).
 
-⚠️ Experimental project
+⚠️ **Experimental project**
 
 This repository explores a modular CiA402 semantic layer for LinuxCNC.
 
@@ -33,6 +33,19 @@ The same semantic layer can work with:
 
 This repository currently focuses on validating the architecture in simulation
 before integrating with real EtherCAT hardware.
+
+---
+
+# Table of Contents
+
+* Design Goals
+* Current Components
+* Execution Model
+* Repository Layout
+* Validation Status
+* Project Status
+* Future Work
+* License
 
 ---
 
@@ -91,7 +104,7 @@ transport adapter
 ↓
 drive / fieldbus
 
-Important note:
+**Important note**
 
 This project does **not replace or modify the LinuxCNC motion controller**.
 
@@ -255,6 +268,7 @@ the architecture remains deterministic.
 
 # Repository Layout
 
+```
 comp/
     machine_safety_gate.comp
     cia402_pds.comp
@@ -268,12 +282,14 @@ hal/
     stub_test_modular_pds.hal
 
 docs/
-    architecture
-    design notes
-    roadmap
+    architecture.md
+    design_notes.md
+    error_codes.md
+    roadmap.md
 
 opc_validation.ini
 opc_validation.hal
+```
 
 ---
 
@@ -299,29 +315,4 @@ Servo thread frequency used for testing:
 
 Current state:
 
-* CiA402 PDS state machine implemented
-* deterministic controlword ownership
-* homing supervision logic
-* HAL drive stub for simulation testing
-
-Next milestone:
-
-integration with real EtherCAT drives via lcec.
-
----
-
-# Future Work
-
-Next steps:
-
-* finalize machine safety gate layer
-* implement EtherCAT adapter (lcec backend)
-* test with real CiA402 drives
-* Mesa hardware integration example
-* additional CiA402 operation modes
-
----
-
-# License
-
-MIT License
+* CiA402 PDS state machine imp
