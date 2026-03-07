@@ -1,0 +1,73 @@
+component machine_safety_gate "LinuxCNC-oriented machine policy gate, transport-agnostic";
+
+pin in  bit estop_ok         "True when the machine E-stop chain is healthy";
+pin in  bit machine_on       "True when machine enable / machine on is requested";
+pin in  bit drives_ready     "True when backend/drives/coupler are ready";
+pin in  bit homing_req       "True when homing is being requested";
+pin in  bit motion_req       "True when motion is being requested";
+pin in  bit fault_reset_req  "True when fault reset is being requested";
+
+pin out bit machine_ok         "Overall machine policy healthy";
+pin out bit allow_enable       "Allow CiA402 PDS enable progression";
+pin out bit allow_homing       "Allow homing procedure";
+pin out bit allow_motion       "Allow commanded motion";
+pin out bit allow_fault_reset  "Allow fault reset propagation";
+pin out s32 reason             "Diagnostic reason code";
+
+function update;
+license "MIT";
+
+;;
+
+enum {
+    REASON_OK = 0,
+    REASON_ESTOP_NOT_OK = 1,
+    REASON_MACHINE_OFF = 2,
+    REASON_DRIVES_NOT_READY = 3,
+};
+
+/*
+Policy philosophy:
+- This component is LinuxCNC-oriented, but transport-agnostic.
+- It does NOT implement CiA402 semantics.
+- It does NOT compose controlword 6040.
+- It only authorizes whether upper semantic layers may proceed.
+
+Current v1 behavior:
+- machine_ok requires:
+    estop_ok == 1
+    machine_on == 1
+    drives_ready == 1
+- allow_enable follows machine_ok
+- allow_fault_reset follows machine_ok AND fault_reset_req
+- allow_homing follows machine_ok AND homing_req
+- allow_motion follows machine_ok AND motion_req
+
+This keeps the gate simple, explicit, and easy to debug.
+*/
+
+FUNCTION(update)
+{
+    int ok = 1;
+    int why = REASON_OK;
+
+    if (!estop_ok) {
+        ok = 0;
+        why = REASON_ESTOP_NOT_OK;
+    } else if (!machine_on) {
+        ok = 0;
+        why = REASON_MACHINE_OFF;
+    } else if (!drives_ready) {
+        ok = 0;
+        why = REASON_DRIVES_NOT_READY;
+    }
+
+    machine_ok = ok;
+    reason = why;
+
+    allow_enable = machine_ok ? 1 : 0;
+
+    allow_fault_reset = (machine_ok && fault_reset_req) ? 1 : 0;
+    allow_homing = (machine_ok && homing_req) ? 1 : 0;
+    allow_motion = (machine_ok && motion_req) ? 1 : 0;
+}
