@@ -256,16 +256,21 @@ the architecture remains deterministic.
 # Repository Layout
 
 comp/
-machine_safety_gate.comp
-cia402_pds.comp
-cia402_homing.comp
-cia402_cw_compose.comp
-cia402_stub.comp
+    machine_safety_gate.comp
+    cia402_pds.comp
+    cia402_homing.comp
+    cia402_cw_compose.comp
+    cia402_stub.comp
 
 hal/
-stub_test.hal
-stub_test_modular.hal
-stub_test_modular_pds.hal
+    stub_test.hal
+    stub_test_modular.hal
+    stub_test_modular_pds.hal
+
+docs/
+    architecture
+    design notes
+    roadmap
 
 opc_validation.ini
 opc_validation.hal
