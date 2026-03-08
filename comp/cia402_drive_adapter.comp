@@ -1,0 +1,29 @@
+component cia402_drive_adapter "Vendor-agnostic CiA402 drive adapter (semantic layer <-> backend)";
+
+pin in  u32 cw_cmd        "Controlword from semantic layer (6040)";
+pin in  s32 mode_cmd      "Mode command from semantic layer (6060)";
+
+pin out u32 sw            "Statusword to semantic layer (6041)";
+pin out s32 mode_display  "Mode display to semantic layer (6061)";
+
+pin out u32 cw_backend        "Controlword to backend";
+pin out s32 mode_backend_cmd  "Mode command to backend";
+
+pin in  u32 sw_backend        "Statusword from backend";
+pin in  s32 mode_backend_disp "Mode display from backend";
+
+function update;
+license "MIT";
+
+;;
+
+FUNCTION(update)
+{
+    /* semantic layer -> backend */
+    cw_backend = cw_cmd;
+    mode_backend_cmd = mode_cmd;
+
+    /* backend -> semantic layer */
+    sw = sw_backend;
+    mode_display = mode_backend_disp;
+}
