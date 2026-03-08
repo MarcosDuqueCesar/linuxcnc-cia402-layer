@@ -1,14 +1,14 @@
-component cia402_pds "CiA402 PDS state manager (robust decode: DS402 + SOD exception for QS-bit stubs)";
+component cia402_pds "CiA402 PDS state manager (robust decode: DS402 states + SOD exception + QS/FRA explicit handling)";
 
 pin in  u32 sw            "Statusword 6041";
 pin in  bit enable        "Request enable";
 pin in  bit disable       "Request disable (placeholder)";
-pin in  bit quick_stop    "Request quick stop (placeholder)";
+pin in  bit quick_stop    "Request quick stop";
 pin in  bit fault_reset   "Fault reset request";
 
 pin out u32 cw_pds        "Base controlword 6040";
 pin out bit op_enabled    "True when drive is in Operation Enabled";
-pin out bit fault         "True when fault detected";
+pin out bit fault         "True when fault or fault-reaction condition detected";
 pin out s32 state         "Decoded DS402 state value (recognized pattern or masked fallback)";
 pin out s32 reason        "Diagnostic reason code for current PDS path";
 
@@ -35,6 +35,8 @@ license "MIT";
 #define ST_READY_TO_SWITCH_ON     0x0021
 #define ST_SWITCHED_ON            0x0023
 #define ST_OPERATION_ENABLED      0x0027
+#define ST_QUICK_STOP_ACTIVE      0x0007
+#define ST_FAULT_REACTION_ACTIVE  0x000F
 #define ST_FAULT                  0x0008
 
 /* Diagnostic reason codes */
@@ -43,6 +45,8 @@ license "MIT";
 #define PDS_R_READY_TO_SWITCH_ON     2
 #define PDS_R_SWITCHED_ON            3
 #define PDS_R_OPERATION_ENABLED      4
+#define PDS_R_QUICK_STOP_ACTIVE      5
+#define PDS_R_FAULT_REACTION_ACTIVE  6
 
 #define PDS_R_FAULT_PRESENT          10
 #define PDS_R_FAULT_RESET_REQUESTED  11
@@ -57,65 +61,96 @@ FUNCTION(update)
     st_6f = s6;
     st_4f = s4;
 
-    fault = (sw & 0x0008u) != 0;
+    /* Default outputs. Individual states override as needed. */
+    fault      = 0;
+    op_enabled = 0;
+    state      = (int32_t)s6;
+    reason     = PDS_R_UNKNOWN_STATE;
+    cw_pds     = enable ? CMD_SHUTDOWN : CMD_DISABLE_VOLTAGE;
 
-    if (fault) {
-        cw_pds     = fault_reset ? CMD_FAULT_RESET : CMD_DISABLE_VOLTAGE;
-        op_enabled = 0;
-        state      = (int32_t)ST_FAULT;
-        reason     = fault_reset ? PDS_R_FAULT_RESET_REQUESTED
-                                 : PDS_R_FAULT_PRESENT;
-        return;
-    }
-
-    /* Robust SOD decode:
-       Some stubs/drives keep QS (bit5) asserted, which makes
-       (sw & 0x006F) = 0x0060 for SOD.
-       Accept SOD if (sw & 0x004F) == 0x0040.
+    /*
+      Robust SOD decode:
+      Some stubs/drives keep QS (bit5) asserted, which makes
+      (sw & 0x006F) = 0x0060 for SOD.
+      Accept SOD if (sw & 0x004F) == 0x0040.
     */
     if (s4 == ST_SWITCH_ON_DISABLED) {
-        op_enabled = 0;
-        state      = (int32_t)ST_SWITCH_ON_DISABLED;
-        reason     = PDS_R_SWITCH_ON_DISABLED;
-        cw_pds     = enable ? CMD_SHUTDOWN : CMD_DISABLE_VOLTAGE;
+        state  = (int32_t)ST_SWITCH_ON_DISABLED;
+        reason = PDS_R_SWITCH_ON_DISABLED;
+        cw_pds = enable ? CMD_SHUTDOWN : CMD_DISABLE_VOLTAGE;
         return;
     }
 
     switch (s6) {
 
+        case ST_NOT_READY:
+            state  = (int32_t)ST_NOT_READY;
+            reason = PDS_R_NOT_READY;
+            cw_pds = CMD_DISABLE_VOLTAGE;
+            break;
+
         case ST_READY_TO_SWITCH_ON:
-            op_enabled = 0;
-            state      = (int32_t)ST_READY_TO_SWITCH_ON;
-            reason     = PDS_R_READY_TO_SWITCH_ON;
-            cw_pds     = CMD_SWITCH_ON;
+            state  = (int32_t)ST_READY_TO_SWITCH_ON;
+            reason = PDS_R_READY_TO_SWITCH_ON;
+            cw_pds = enable ? CMD_SWITCH_ON : CMD_DISABLE_VOLTAGE;
             break;
 
         case ST_SWITCHED_ON:
-            op_enabled = 0;
-            state      = (int32_t)ST_SWITCHED_ON;
-            reason     = PDS_R_SWITCHED_ON;
-            cw_pds     = CMD_ENABLE_OPERATION;
+            state  = (int32_t)ST_SWITCHED_ON;
+            reason = PDS_R_SWITCHED_ON;
+            if (!enable || disable) {
+                cw_pds = CMD_DISABLE_VOLTAGE;
+            } else if (quick_stop) {
+                cw_pds = CMD_QUICK_STOP;
+            } else {
+                cw_pds = CMD_ENABLE_OPERATION;
+            }
             break;
 
         case ST_OPERATION_ENABLED:
             op_enabled = 1;
             state      = (int32_t)ST_OPERATION_ENABLED;
             reason     = PDS_R_OPERATION_ENABLED;
-            cw_pds     = CMD_ENABLE_OPERATION;
+            if (!enable || disable) {
+                op_enabled = 0;
+                cw_pds     = CMD_DISABLE_VOLTAGE;
+            } else if (quick_stop) {
+                op_enabled = 0;
+                cw_pds     = CMD_QUICK_STOP;
+            } else {
+                cw_pds     = CMD_ENABLE_OPERATION;
+            }
             break;
 
-        case ST_NOT_READY:
-            op_enabled = 0;
-            state      = (int32_t)ST_NOT_READY;
-            reason     = PDS_R_NOT_READY;
-            cw_pds     = CMD_DISABLE_VOLTAGE;
+        case ST_QUICK_STOP_ACTIVE:
+            state  = (int32_t)ST_QUICK_STOP_ACTIVE;
+            reason = PDS_R_QUICK_STOP_ACTIVE;
+            if (!enable || disable) {
+                cw_pds = CMD_DISABLE_VOLTAGE;
+            } else if (quick_stop) {
+                cw_pds = CMD_QUICK_STOP;
+            } else {
+                cw_pds = CMD_ENABLE_OPERATION;
+            }
+            break;
+
+        case ST_FAULT_REACTION_ACTIVE:
+            fault  = 1;
+            state  = (int32_t)ST_FAULT_REACTION_ACTIVE;
+            reason = PDS_R_FAULT_REACTION_ACTIVE;
+            cw_pds = CMD_DISABLE_VOLTAGE;
+            break;
+
+        case ST_FAULT:
+            fault  = 1;
+            state  = (int32_t)ST_FAULT;
+            reason = fault_reset ? PDS_R_FAULT_RESET_REQUESTED
+                                 : PDS_R_FAULT_PRESENT;
+            cw_pds = fault_reset ? CMD_FAULT_RESET : CMD_DISABLE_VOLTAGE;
             break;
 
         default:
-            op_enabled = 0;
-            state      = (int32_t)s6;
-            reason     = PDS_R_UNKNOWN_STATE;
-            cw_pds     = enable ? CMD_SHUTDOWN : CMD_DISABLE_VOLTAGE;
+            /* keep initialized fallback */
             break;
     }
 }
