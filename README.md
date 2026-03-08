@@ -1,344 +1,246 @@
 # linuxcnc-cia402-layer
 
-Modular CiA402 semantic layer for LinuxCNC (EtherCAT and other transports).
+Vendor-agnostic **CiA402 semantic layer for LinuxCNC** implemented with modular HAL components.
 
-⚠️ **Experimental project**
+The goal of this project is to provide a clean separation between:
 
-This repository explores a modular CiA402 semantic layer for LinuxCNC.
+- machine policy
+- CiA402 protocol semantics
+- hardware transport / fieldbus integration
 
-The current implementation has been validated in simulation using a HAL
-drive stub. Real hardware integration (EtherCAT / lcec) is the next step.
+This allows CiA402 behavior to be validated in simulation and reused across different hardware backends.
 
-The architecture is still evolving.
-
----
-
-Transport-agnostic and drive-agnostic CiA402 semantic layer for LinuxCNC.
-
-This project implements a modular HAL-based architecture that separates:
-
-* machine safety policy
-* CiA402 protocol semantics
-* transport / fieldbus integration
-
-The goal is to make CiA402 drives usable in LinuxCNC without embedding
-protocol-specific logic inside motion or transport drivers.
-
-The same semantic layer can work with:
-
-* EtherCAT
-* simulation stubs
-* future Mesa integrations
-* other transports
-
-This repository currently focuses on validating the architecture in simulation
-before integrating with real EtherCAT hardware.
+The project does **not modify LinuxCNC motion**.  
+LinuxCNC remains the trajectory generator and motion authority.
 
 ---
 
-# Table of Contents
+# Architecture
 
-* Design Goals
-* Current Components
-* Execution Model
-* Repository Layout
-* Validation Status
-* Project Status
-* Future Work
-* License
+The architecture separates responsibilities into independent layers.
 
----
-
-# Design Goals
-
-## Deterministic behavior
-
-All modules execute inside the LinuxCNC servo thread.
-
-Execution order is explicitly defined in HAL.
-
-Only one component writes the final CiA402 controlword.
-
----
-
-## Explicit controlword ownership
-
-The final controlword is composed explicitly:
-
-cw_final = cw_pds | start4
-
-This guarantees that:
-
-* only one module writes the controlword
-* protocol semantics remain deterministic
-* race conditions between modules are avoided
-
----
-
-## Transport independence
-
-The CiA402 semantic layer is not tied to EtherCAT.
-
-Transport adapters can map the semantic layer to:
-
-* EtherCAT
-* simulation stubs
-* Mesa hardware
-* other drivers
-
----
-
-## Machine safety separation
-
-Machine safety policy should not be embedded inside protocol logic.
-
-The intended architecture separates layers clearly:
-
-```
+```text
 LinuxCNC motion
-      ↓
+        |
+        v
 machine_safety_gate
-      ↓
+        |
+        v
 CiA402 semantic layer
-      ↓
-transport adapter
-      ↓
-drive / fieldbus
+        |
+        v
+drive / transport adapter
+        |
+        v
+CiA402 drive (Power Drive System)
 ```
 
-**Important note**
-
-This project does **not replace or modify the LinuxCNC motion controller**.
-
-LinuxCNC motion remains responsible for trajectory generation,
-coordination, and global motion logic.
-
-The CiA402 layer only translates motion semantics into the
-CiA402 protocol used by smart drives.
-
-The machine_safety_gate is a machine-policy layer for enable,
-fault-reset, homing, and motion permissions. It does **not replace
-hardware E-stop chains, STO, contactors, or other certified
-safety functions**.
+This design prevents protocol logic, machine logic and hardware transport from becoming tightly coupled.
 
 ---
 
-# Current Components
+# LinuxCNC Role
 
-## machine_safety_gate.comp
+LinuxCNC acts as the **Control Device** in the CiA402 architecture.
 
-Machine policy gate placed between LinuxCNC motion and the CiA402 layer.
+Responsibilities remain inside LinuxCNC:
 
-Responsibilities:
+- trajectory planning
+- interpolation
+- kinematics
+- coordinated motion
+- synchronization
 
-* gate enable requests
-* gate fault reset requests
-* gate homing requests
-* gate motion permissions
+The drive acts as the **Power Drive System (PDS)** executing the motion commands.
 
-The gate enforces machine-level conditions such as:
+---
 
-* E-stop state
-* machine power state
-* drive readiness
+# Machine Safety Gate
 
-It prevents the CiA402 layer from enabling drives when the machine
-is not in a valid operational state.
+The `machine_safety_gate` component implements **machine policy gating**.
+
+Typical responsibilities:
+
+- enable permission
+- motion permission
+- homing permission
+- fault reset permission
+
+This layer is intentionally **generic** and **transport independent**.
+
+It can be used with:
+
+- EtherCAT drives
+- Mesa hardware
+- simulated drives
+- other future backends
 
 Important:
 
-This component implements machine policy only.
-It does not implement the CiA402 protocol and does not replace
-hardware safety systems such as E-stop chains or STO.
+This component **does not replace real safety hardware** such as:
+
+- E-stop circuits
+- STO
+- safety relays
+- contactors
+
+Those must always exist in hardware.
 
 ---
 
-## cia402_pds.comp
+# CiA402 Semantic Layer
 
-CiA402 Power Drive System state manager.
+The semantic layer implements the CiA402 protocol behavior using HAL components.
 
-Responsibilities:
+Main modules:
 
-* decode CiA402 statusword (6041)
-* manage CiA402 state transitions
-* generate base controlword (6040)
-* expose Operation Enabled
-* handle fault reset
+```text
+cia402_pds
+cia402_homing
+cia402_cw_compose
+```
 
-The decode logic checks both masks:
+Responsibilities include:
 
-sw & 0x006F
-sw & 0x004F
-
-This handles drives that keep the Quick Stop bit asserted
-while still being in Switch On Disabled.
-
-Outputs:
-
-cw_pds
-op_enabled
-state
-reason
+- interpreting the Statusword (6041h)
+- generating the Controlword (6040h)
+- supervising homing procedures
+- exposing semantic signals (fault, op_enabled, etc.)
 
 ---
 
-## cia402_homing.comp
+# Deterministic Controlword Composition
 
-Homing procedure supervisor.
+To avoid ambiguity, **only one module writes the final controlword**.
 
-Responsibilities:
+Conceptually:
 
-* request homing operation mode
-* wait for opmode display confirmation
-* generate homing start pulse (bit 4)
-* monitor homing completion
-* latch done/error conditions
-
-Important design rule:
-
-This module does **not own the controlword**.
-
-It only requests the homing start bit.
-
----
-
-## cia402_cw_compose.comp
-
-Controlword ownership module.
-
-Purpose:
-
-Guarantee deterministic controlword composition.
-
-Rule:
-
-cw_final = cw_pds | start4
+```text
+cw_final = cw_pds | procedure_bits
+```
 
 Where:
 
-cw_pds → base state machine output
-start4 → homing start request
+- `cw_pds` comes from the PDS state manager
+- `procedure_bits` may include homing start signals
 
-This avoids multiple writers to object 6040.
-
----
-
-## cia402_stub.comp
-
-Simulation stub used for validation without real hardware.
-
-Capabilities:
-
-* PDS state simulation
-* homing completion simulation
-* operation mode display delay
-* fault injection
-* fault reset timing
-
-This allows the entire CiA402 layer to be tested in
-LinuxCNC AXIS simulation.
+This avoids race conditions between HAL components.
 
 ---
 
-# Execution Model
+# HAL Execution Order
 
-All modules run in the same servo thread.
+All modules run in the same LinuxCNC realtime thread.
 
-Example configuration:
+Conceptual order:
 
-servo-thread: 1 kHz
-
-Execution order:
-
-```
+```text
 machine_safety_gate
 → cia402_pds
 → cia402_homing
 → cia402_cw_compose
-→ cia402_stub
+→ drive / stub
 ```
 
-LinuxCNC HAL executes functions sequentially according to addf order.
-
-Because:
-
-* modules share the same thread
-* execution order is explicit
-* controlword ownership is unique
-
-the architecture remains deterministic.
+HAL executes functions sequentially, ensuring deterministic behavior.
 
 ---
 
-# Repository Layout
+# Operation Modes
 
+CiA402 defines multiple operation modes.
+
+For CNC systems the most relevant modes are:
+
+```text
+Cyclic Synchronous Position (CSP)
+Homing Mode (HM)
 ```
-comp/
-    machine_safety_gate.comp
-    cia402_pds.comp
-    cia402_homing.comp
-    cia402_cw_compose.comp
-    cia402_stub.comp
 
-hal/
-    stub_test.hal
-    stub_test_modular.hal
-    stub_test_modular_pds.hal
+CSP is preferred because LinuxCNC remains the trajectory generator.
 
+Other CiA402 modes may be supported in the future.
+
+---
+
+# Simulation
+
+The repository includes a simulated drive:
+
+```text
+cia402_stub
+```
+
+The stub emulates:
+
+- PDS state transitions
+- homing completion
+- operation mode reporting
+- fault behavior
+
+This allows most of the CiA402 logic to be validated without real hardware.
+
+---
+
+# Gantry / Coupler (future work)
+
+Machine coordination features such as gantry squaring belong to the **machine layer**, not the protocol layer.
+
+Typical procedures include:
+
+```text
+decouple
+home independently
+square gantry
+recouple
+```
+
+These mechanisms are intentionally kept separate from the CiA402 semantic layer.
+
+---
+
+# Documentation
+
+Detailed documentation is available in the `docs/` directory:
+
+```text
 docs/
-    architecture.md
-    design_notes.md
-    error_codes.md
-    roadmap.md
-
-opc_validation.ini
-opc_validation.hal
+ ├─ architecture.md        Project architecture
+ ├─ cia402_reference.md    CiA402 protocol reference
+ ├─ drive_integration.md   Integrating real drives
+ └─ error_codes.md         Fault handling and diagnostics
 ```
 
 ---
 
-# Validation Status
+# Project Goals
 
-Validated in LinuxCNC AXIS simulation:
+The project aims to provide:
 
-* deterministic controlword ownership
-* robust PDS decoding
-* homing supervision
-* operation mode handshake
-* fault injection
-* fault reset behavior
-* homing gated by Operation Enabled
-
-Servo thread frequency used for testing:
-
-1 kHz
+- clear separation between machine policy and drive protocol
+- deterministic controlword generation
+- reusable CiA402 semantics
+- hardware-agnostic integration
+- validation without physical drives
 
 ---
 
-# Project Status
+# Status
 
-Current state:
+Current capabilities:
 
-* CiA402 PDS state machine implemented
-* deterministic controlword ownership
-* homing supervision logic
-* HAL drive stub for simulation testing
+- CiA402 PDS state machine
+- deterministic controlword composition
+- homing supervision
+- simulation stub
+- modular HAL architecture
 
-Next milestone:
+Future work may include:
 
-integration with real EtherCAT drives via lcec.
-
----
-
-# Future Work
-
-Next steps:
-
-* finalize machine safety gate layer
-* implement EtherCAT adapter (lcec backend)
-* test with real CiA402 drives
-* Mesa hardware integration example
-* additional CiA402 operation modes
+- additional operation modes
+- gantry / coupling logic
+- transport adapters
+- expanded diagnostics
 
 ---
 
