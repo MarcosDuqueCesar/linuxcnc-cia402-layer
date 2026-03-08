@@ -1,18 +1,14 @@
-# Architecture
+Architecture
 
-This document describes the architecture of the `linuxcnc-cia402-layer` project.
+This document describes the architecture of the linuxcnc-cia402-layer project.
 
 The design separates machine policy, CiA402 protocol semantics, and hardware transport integration into independent layers. This separation allows the CiA402 behavior to be validated in simulation and reused across different hardware backends.
 
-The project does **not modify the LinuxCNC motion controller**. LinuxCNC remains the authority for trajectory planning and coordinated motion.
+The project does not modify the LinuxCNC motion controller. LinuxCNC remains the authority for trajectory planning and coordinated motion.
 
 The CiA402 layer acts as a semantic bridge between LinuxCNC motion and CiA402 drives.
 
----
-
-# Architectural Overview
-
-```text
+Architectural Overview
 LinuxCNC motion
         |
         v
