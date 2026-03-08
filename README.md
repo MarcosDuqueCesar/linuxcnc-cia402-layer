@@ -1,34 +1,25 @@
 # linuxcnc-cia402-layer
 
-Vendor-agnostic CiA402 (DS402) semantic layer for LinuxCNC, built around a clean separation between:
+Vendor-agnostic modular CiA402 semantic layer for LinuxCNC.
+
+The project separates four concerns that are commonly mixed in drive integrations:
 
 - machine policy
 - CiA402 PDS semantics
-- procedure logic such as homing
-- deterministic controlword composition
-- hardware / transport integration
-
-The project is designed so LinuxCNC remains the motion authority while the CiA402 layer handles protocol semantics and the adapter layer handles real backend integration.
-
-## Project goals
-
-The main goal is to separate clearly:
-
-- machine policy
-- CiA402 protocol semantics
+- procedure semantics such as homing
 - transport / hardware integration
 
-This separation allows:
+This separation allows the same semantic core to be validated in simulation, reused across different backends, and kept independent from any specific transport.
 
-- validation without real hardware
-- lower coupling between machine logic and drive logic
-- easier simulation
-- backend reuse across EtherCAT, Mesa, simulation, and future adapters
-- keeping LinuxCNC as the trajectory authority
+## Design goals
+
+- keep LinuxCNC as the authority for motion and trajectory generation
+- isolate CiA402 state-machine behavior from machine policy
+- avoid ambiguous ownership of controlword 6040h
+- support validation without real hardware
+- prepare a clean path for future EtherCAT, Mesa, and simulation adapters
 
 ## Consolidated architecture
-
-Logical architecture:
 
 ```text
 LinuxCNC motion
@@ -46,69 +37,67 @@ drive / transport adapter
 CiA402 drive (Power Drive System)
 ```
 
-## Separation of authorities
+## Authority split
 
-The project intentionally separates authority by responsibility:
-
-| Responsibility | Owner |
+| Responsibility | Module |
 |---|---|
-| motion authority | LinuxCNC motion |
-| machine policy authority | machine_safety_gate |
-| drive PDS state authority | cia402_pds |
-| procedure authority | cia402_homing |
-| final 6040 ownership | cia402_cw_compose |
+| Motion authority | LinuxCNC motion |
+| Machine policy authority | machine_safety_gate |
+| Drive state authority | cia402_pds |
+| Procedure authority | cia402_homing |
+| Final controlword ownership | cia402_cw_compose |
 
-This avoids a common integration mistake in CiA402 systems: mixing trajectory control, drive-state control, and procedure sequencing in the same module.
+This avoids a common CiA402 integration failure mode: mixing trajectory control, PDS control, and procedure control in the same block.
 
 ## Layer roles
 
 ### LinuxCNC motion
 
-LinuxCNC motion remains responsible for:
+Responsible for:
 
 - trajectory generation
 - interpolation
 - kinematics
-- coordination
+- coordinated motion
 - global synchronization
 
 This project does not replace LinuxCNC motion.
 
 ### machine_safety_gate
 
-`machine_safety_gate` is a generic machine-policy gate.
+Generic machine-policy layer.
 
-It is responsible for gating:
+It gates requests such as:
 
 - enable
-- motion
 - homing
+- motion
 - fault reset
 
-Important boundaries:
+Important limits:
 
-- it does not implement CiA402
-- it does not write 6040
-- it is not certified safety
-- it does not replace hardware safety
+- does not implement CiA402
+- does not write controlword 6040h directly
+- does not replace certified safety
+- does not replace hardware safety
 
 It does not replace:
 
 - physical E-stop
 - STO
-- safety relay
-- contactor
+- safety relays
+- contactors
 
-The component is intentionally reusable with different backends such as:
+Because it is policy-oriented rather than protocol-oriented, it is conceptually reusable with:
 
 - EtherCAT
 - Mesa
 - simulation
-- future adapters
+- future backends
 
 ### CiA402 semantic layer
 
-Main semantic components:
+Core components:
 
 - `cia402_pds`
 - `cia402_homing`
@@ -116,42 +105,37 @@ Main semantic components:
 
 Responsibilities:
 
-- interpret statusword `6041h`
-- generate base controlword semantics for `6040h`
-- supervise procedures such as homing
-- expose semantic signals such as:
-  - `state`
-  - `reason`
-  - `op_enabled`
-  - `fault`
+- decode statusword 6041h semantics
+- generate base controlword 6040h intent
+- supervise procedure-level behavior such as homing
+- expose semantic signals such as state, reason, op-enabled, and fault
 
 ### drive / transport adapter
 
-The adapter layer is responsible for integration with real hardware.
+Backend-facing integration layer.
 
 Examples:
 
-- EtherCAT / `lcec`
-- Mesa backend
-- future transport-specific adapters
+- EtherCAT / lcec adapter
+- Mesa-oriented adapter
+- simulation adapter
+- future transport-specific integrations
 
-This keeps backend details out of the semantic core.
+The semantic core should remain axis-centric, while the adapter may be node-aware or channel-aware.
 
-## Single-writer rule for 6040
+## Single-writer rule for controlword 6040h
 
-A core project rule is:
-
-> only one module writes the final 6040 controlword.
+Only one module writes the final controlword.
 
 Architecture:
 
 ```text
 cia402_pds        -> cw_pds
-cia402_homing     -> start_out
+cia402_homing     -> procedure bits / start request
 cia402_cw_compose -> cw_final
 ```
 
-Composition concept:
+Conceptually:
 
 ```text
 cw_final = cw_pds | procedure_bits
@@ -159,41 +143,36 @@ cw_final = cw_pds | procedure_bits
 
 This avoids:
 
-- multiple 6040 writers
-- control ambiguity
-- race-like design errors
+- multiple writers to 6040h
+- ambiguous bit ownership
+- composition races
 
 ## Deterministic HAL pipeline
 
-All semantic modules are intended to run in the same LinuxCNC servo thread.
+All components are intended to run in the same LinuxCNC servo thread through ordered `addf` execution.
 
-Conceptual execution order:
+Typical conceptual order:
 
 ```text
 machine_safety_gate
 -> cia402_pds
--> homing gate
 -> cia402_homing
 -> cia402_cw_compose
--> drive / stub
+-> adapter / stub
 ```
 
-In HAL, execution order is defined explicitly by `addf`, so these modules run sequentially, not concurrently.
+There is no true concurrency here as long as each signal has a single writer.
 
-That means there is no real concurrency between them as long as each signal has a single writer.
+## Scope and operating modes
 
-## Current CiA402 scope
-
-Current consolidated scope:
+Initial scope:
 
 - CSP (Cyclic Synchronous Position)
 - HM (Homing Mode)
 
-Why CSP:
+Reasoning:
 
 For CNC use, CSP preserves LinuxCNC as trajectory generator.
-
-Flow:
 
 ```text
 LinuxCNC motion
@@ -203,211 +182,98 @@ cyclic target position
 drive
 ```
 
-This avoids delegating trajectory generation to the drive.
+This avoids delegating path generation to the drive.
 
-## Control-state robustness in `cia402_pds`
+## Quick Stop in this project
 
-The PDS component is intended to decode valid DS402 states explicitly.
+Quick Stop is supported as a valid CiA402 semantic condition, but it is not intended to be the normal stop path for LinuxCNC.
 
-Recognized categories include:
+Project position:
 
-- Not Ready to Switch On
-- Switch On Disabled
-- Ready to Switch On
-- Switched On
-- Operation Enabled
-- Quick Stop Active
-- Fault Reaction Active
-- Fault
-
-Important rule:
-
-> valid DS402 states should not collapse into `UNKNOWN_STATE`.
-
-`UNKNOWN_STATE` is reserved for patterns that are truly not recognized by the implemented decode logic.
-
-This improves:
-
-- diagnostics
-- documentation quality
-- future adapter behavior
-
-## Quick Stop policy
-
-Quick Stop support exists in the semantic layer, but it is not intended to be the normal stop path for LinuxCNC.
-
-Project policy:
-
-- normal stop remains under LinuxCNC motion / planner authority
+- normal stop should remain planner / motion driven
 - Quick Stop is treated as an exceptional or policy-driven path
-- Quick Stop must be decoded correctly as a valid DS402 state
+- `Quick Stop Active` is a valid DS402 state and should not be treated as unknown
+- `Fault Reaction Active` is also a valid DS402 condition and should not be treated as unknown
 
-This keeps LinuxCNC as motion authority while still supporting DS402 semantics correctly.
+## Gantry / coupler direction
 
-## Machine-policy integration into `cia402_pds`
+Gantry behavior belongs to machine logic, not to CiA402 semantics.
 
-The architecture now reflects machine-policy gating more explicitly.
-
-Conceptually, `cia402_pds` should act on effective requests such as:
-
-```text
-effective_enable = enable && allow_enable
-effective_fault_reset = fault_reset && allow_fault_reset
-```
-
-This prevents the semantic layer from trying to progress the PDS when machine policy is explicitly blocking enable or reset.
-
-That makes machine policy authority real in behavior, not only conceptual in documentation.
-
-## Gantry / coupler position in the architecture
-
-Gantry logic is intentionally not part of CiA402 semantics.
-
-Expected functions such as:
+Planned machine-level functions include:
 
 - decouple
-- home independently
-- square
+- independent homing
+- squaring
 - recouple
 
-belong to machine logic, not to the PDS semantic layer.
-
-Current project direction:
-
-before moving into gantry logic, first strengthen:
-
-- diagnostics
-- state clarity
-- reason clarity
-- backend-facing semantics
-
-## Multi-axis node support
-
-The semantic core should stay axis-centric.
-
-Recommended model:
-
-- one semantic instance per controlled axis / channel
-- adapter layer handles whether hardware is:
-  - single-axis slave
-  - multi-axis slave
-  - separate drives
-  - simulation backend
-
-This means multi-axis EtherCAT nodes should be handled in the adapter mapping, not by changing the semantic core to become slave-centric.
+This logic should remain outside the CiA402 semantic core.
 
 ## Repository structure
 
 ```text
-linuxcnc-cia402-layer
-│
+linuxcnc-cia402-layer/
 ├─ README.md
 ├─ LICENSE
-│
 ├─ comp/
-│   ├─ cia402_cw_compose.comp
-│   ├─ cia402_homing.comp
-│   ├─ cia402_pds.comp
-│   ├─ cia402_stub.comp
-│   └─ machine_safety_gate.comp
-│
+│  ├─ cia402_cw_compose.comp
+│  ├─ cia402_homing.comp
+│  ├─ cia402_pds.comp
+│  ├─ cia402_stub.comp
+│  └─ machine_safety_gate.comp
 ├─ docs/
-│   ├─ architecture.md
-│   ├─ cia402_reference.md
-│   ├─ drive_integration.md
-│   └─ error_codes.md
-│
+│  ├─ architecture.md
+│  ├─ cia402_reference.md
+│  ├─ drive_integration.md
+│  └─ error_codes.md
 ├─ hal/
-│   ├─ stub_test.hal
-│   ├─ stub_test_modular.hal
-│   └─ stub_test_modular_pds.hal
-│
+│  ├─ stub_test.hal
+│  ├─ stub_test_modular.hal
+│  └─ stub_test_modular_pds.hal
 ├─ custom.hal
 ├─ opc_validation.hal
 └─ opc_validation.ini
 ```
 
-## Validation harness levels
+## Current state
 
-The HAL validation files are intended to represent progressively richer validation levels.
-
-### `hal/stub_test.hal`
-
-Minimal homing-oriented validation.
-
-### `hal/stub_test_modular.hal`
-
-Semi-modular validation without full PDS ownership.
-
-### `hal/stub_test_modular_pds.hal`
-
-Full modular pipeline validation.
-
-Conceptual full pipeline:
-
-```text
-machine_safety_gate
--> cia402_pds
--> homing gate
--> cia402_homing
--> cia402_cw_compose
--> cia402_stub
-```
-
-This is the most representative harness for the intended architecture.
-
-## Current development workflow
-
-Current user workflow:
-
-- Windows + Git Bash
-- replace complete files in local clone
-- inspect with `git diff`
-- validate with `git status`
-- `git add`
-- `git commit`
-- `git push`
-
-Complete-file replacement is used intentionally to reduce:
-
-- copy/paste mistakes
-- formatting corruption
-- unexpected line-ending issues
-
-## Current project state
-
-At the current stage, the project has:
+The project is currently focused on:
 
 - consolidated modular architecture
-- clear authority separation
-- deterministic 6040 ownership
+- explicit semantic ownership boundaries
+- deterministic controlword composition
 - improved internal diagnostics
-- validation harness aligned with the architecture
+- validation harnesses aligned with the architecture
 
-What is still intentionally pending:
+Recent architectural refinements include:
 
-- real backend adapter integration
-- machine-level gantry logic
-- decouple / recouple / squaring logic
+- stronger DS402 decode in `cia402_pds`
+- explicit handling for Quick Stop Active
+- explicit handling for Fault Reaction Active
+- tighter integration between machine policy and PDS enable / fault-reset gating
+- modular harnesses updated to reflect real layer ordering
 
-## Recommended next steps
+## Adapter direction
 
-Recommended order of evolution:
+Future real-hardware integration should preserve this rule:
 
-1. consolidate validation with the current semantic components
-2. continue strengthening diagnostics and PDS / homing robustness
-3. keep machine-policy integration aligned in the harness
-4. implement real backend adapter(s)
-5. advance to machine-level logic such as gantry, decouple, recouple, and squaring
+- semantic layer remains per-axis / per-channel
+- adapter handles backend-specific object mapping
 
-## Summary
+This is important for systems such as:
 
-The project is now structured around a clean modular model:
+- one drive per axis
+- multi-axis drives
+- EtherCAT nodes exposing several CiA402 channels
+- Mesa-based backends
 
-- LinuxCNC remains the motion authority
-- machine policy is separated from protocol semantics
-- CiA402 semantics are isolated in dedicated components
-- the final controlword has a single owner
-- backend-specific integration is kept out of the semantic core
+In other words, multi-axis-node complexity belongs in the adapter, not in the semantic core.
 
-This keeps the design reusable, testable, and much easier to evolve toward real hardware integration without losing architectural clarity.
+## Project status summary
+
+The repository is evolving toward a reusable CiA402 semantic framework for LinuxCNC with:
+
+- clear separation of responsibilities
+- one final writer for 6040h
+- improved semantic diagnostics
+- cleaner validation structure
+- a future path toward real backend adapters
