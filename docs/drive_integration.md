@@ -1,240 +1,172 @@
 # Drive Integration
 
-This document explains how the `linuxcnc-cia402-layer` semantic layer connects to a real CiA402 drive.
+This document explains how the CiA402 semantic layer connects to real hardware
+backends while keeping the core architecture vendor‑agnostic.
 
-The project intentionally separates:
+The project intentionally separates three concerns:
 
-- machine policy
-- protocol semantics
-- hardware transport
+1. Machine policy
+2. CiA402 semantic interpretation
+3. Hardware / transport integration
 
-This makes it possible to reuse the same CiA402 semantic logic with different hardware backends such as EtherCAT, Mesa hardware, or simulation.
+Only the adapter layer interacts with real drives.
 
 ---
 
-# Integration Layers
+## Architectural Position
 
-A typical integration stack looks like this:
+Complete control pipeline:
 
-```text
 LinuxCNC motion
-        |
-        v
-machine_safety_gate
-        |
-        v
-CiA402 semantic layer
-        |
-        v
-drive adapter
-        |
-        v
-transport layer (EtherCAT / Mesa / other)
-        |
-        v
-CiA402 drive
-```
+→ machine_safety_gate
+→ cia402_pds
+→ cia402_homing
+→ cia402_cw_compose
+→ drive_adapter
+→ transport backend
+→ drive
 
-Each layer has a specific responsibility.
+The semantic layer never talks directly to EtherCAT, Mesa, or any specific bus.
 
 ---
 
-# Semantic Layer Responsibilities
+## Adapter Responsibility
 
-The semantic layer is implemented by the HAL components in the `comp/` directory.
+The adapter translates between:
 
-Main modules:
+CiA402 semantic signals (HAL)
+and
+transport‑specific objects.
 
-```text
-cia402_pds
-cia402_homing
-cia402_cw_compose
-```
-
-Responsibilities include:
-
-- interpreting the Statusword (6041h)
-- generating the Controlword (6040h)
-- supervising homing procedures
-- exposing semantic signals such as operation enabled and faults
-
-These modules do **not depend on any specific fieldbus**.
+The adapter does **not implement CiA402 logic**.  
+It only moves data between layers.
 
 ---
 
-# Drive Adapter Layer
+## Minimal Interface
 
-Between the semantic layer and the transport layer sits the **drive adapter**.
+The semantic layer only requires four CiA402 objects.
 
-The adapter maps:
+### Commands sent to drive
 
-- HAL pins
-- CiA402 objects
-- fieldbus process data
+| Object | Description |
+|------|-------------|
+| 6040h | Controlword |
+| 6060h | Mode of operation |
 
-Conceptually:
+### Feedback from drive
 
-```text
-HAL signals
-     |
-     v
-CiA402 object mapping
-     |
-     v
-PDO / hardware interface
-```
+| Object | Description |
+|------|-------------|
+| 6041h | Statusword |
+| 6061h | Mode display |
 
-The adapter ensures that the semantic layer remains independent of the hardware protocol.
+These signals form the stable boundary between the semantic layer and hardware.
 
 ---
 
-# EtherCAT Integration
+## HAL Signal Mapping
 
-With EtherCAT the adapter typically connects to the LinuxCNC EtherCAT driver (`lcec`).
+Semantic layer → adapter:
 
-The mapping usually looks like:
+cw_final → controlword  
+mode_cmd → mode_of_operation  
 
-```text
-HAL pin             EtherCAT PDO object
---------------------------------------
-controlword   ->    0x6040
-statusword    <-    0x6041
-opmode        ->    0x6060
-opmode_disp   <-    0x6061
-target_pos    ->    0x607A
-actual_pos    <-    0x6064
-```
+Adapter → semantic layer:
 
-The EtherCAT driver exchanges these values cyclically with the drive.
+statusword → sw  
+mode_display → mode_disp  
+
+No additional semantics are introduced at this level.
 
 ---
 
-# Mesa Hardware Integration
+## Example Backends
 
-Mesa hardware can also be used as a backend for the semantic layer.
+### EtherCAT (lcec)
 
-In this case the adapter maps HAL pins to Mesa registers or FPGA logic.
+Typical mapping:
 
-Example conceptual mapping:
+controlword → lcec.<slave>.6040  
+statusword  ← lcec.<slave>.6041  
 
-```text
-HAL pin
-   |
-   v
-Mesa register / FPGA interface
-   |
-   v
-drive interface
-```
-
-Because the semantic layer is HAL-based, it can operate with Mesa hardware in the same way it does with EtherCAT.
+mode_cmd    → lcec.<slave>.6060  
+mode_disp   ← lcec.<slave>.6061  
 
 ---
 
-# Simulation
+### Mesa Hardware
 
-The repository includes a simulated drive:
+The adapter maps the same objects to Mesa registers or firmware endpoints.
 
-```text
-cia402_stub
-```
+Example concept:
 
-This component emulates:
+controlword → mesa register  
+statusword  ← mesa register  
 
-- PDS state transitions
-- homing completion
-- fault conditions
-- operation mode reporting
-
-Simulation allows most of the CiA402 logic to be validated without real hardware.
+Mode objects follow the same pattern.
 
 ---
 
-# Typical HAL Signal Flow
+### Simulation / Stub
 
-A simplified signal flow may look like this:
+The simulation adapter connects directly to a HAL stub component.
 
-```text
-LinuxCNC motion
-        |
-        v
-machine_safety_gate
-        |
-        v
-cia402_pds
-        |
-        v
-cia402_homing
-        |
-        v
-cia402_cw_compose
-        |
-        v
-drive adapter
-        |
-        v
-transport (EtherCAT / Mesa)
-        |
-        v
-drive
-```
+controlword → stub  
+statusword  ← stub  
 
-The exact HAL wiring depends on the transport layer and the specific drive.
+This allows the semantic layer to be validated without real hardware.
 
 ---
 
-# Position Control with CSP
+## Multi‑Axis Nodes
 
-For CNC systems the preferred CiA402 mode is:
+Some EtherCAT drives expose multiple axes inside a single node.
 
-```text
-Cyclic Synchronous Position (CSP)
-```
+Example:
 
-In CSP mode:
+Axis1 → 6040 / 6041  
+Axis2 → 6840 / 6841  
+Axis3 → 7040 / 7041  
+Axis4 → 7840 / 7841  
 
-- LinuxCNC generates the trajectory
-- target positions are sent cyclically to the drive
-- the drive performs the servo loop
+The adapter handles these offsets.
 
-This preserves LinuxCNC as the motion controller while the drive acts as the power stage.
-
----
-
-# Homing Integration
-
-When using CiA402 homing mode:
-
-1. The semantic layer requests homing mode (6060h).
-2. The drive confirms using 6061h.
-3. The homing start bit is sent through the controlword.
-4. The semantic layer monitors completion.
-
-The `cia402_homing` component supervises this procedure and reports the result to LinuxCNC.
+The semantic layer still runs **one instance per axis**.
 
 ---
 
-# Vendor Differences
+## Important Design Rule
 
-Although CiA402 standardizes many objects, real drives may differ in:
+The adapter **must not interpret drive state**.
 
-- exact state patterns
-- additional diagnostic objects
-- homing behavior
-- PDO layouts
+Signals such as:
 
-The semantic layer handles most protocol behavior, but the adapter may still require vendor-specific configuration.
+op_enabled  
+fault  
+state  
+
+are produced exclusively by `cia402_pds`.
+
+This keeps the semantic layer transport‑agnostic.
 
 ---
 
-# Summary
+## Error Handling
 
-Drive integration is intentionally separated from protocol semantics.
+Transport failures should be surfaced as:
 
-The architecture allows:
+backend_not_ready  
+communication_loss  
 
-- testing without hardware
-- reuse of the CiA402 logic
-- support for multiple transports
+These conditions are handled by `machine_safety_gate` rather than the adapter.
 
-The adapter layer connects the generic CiA402 semantic logic to the specific hardware interface used by the machine.
+---
+
+## Summary
+
+The adapter layer ensures that:
+
+• CiA402 semantics remain independent of hardware  
+• the same logic works with EtherCAT, Mesa, or simulation  
+• new backends can be added without modifying the semantic layer
