@@ -1,29 +1,50 @@
-# --- Stub + UT adapter wiring (runs inside LinuxCNC session) ---
+# --- Stub + homing adapter wiring (current component names) ---
+#
+# Simple homing-only test path:
+#   cia402_homing -> cia402_stub
+#
+# This file intentionally does NOT include cia402_pds or cia402_cw_compose.
+# It is a minimal procedural test harness.
 
-loadrt cia402_drive_stub names=stub
-loadrt c402hu names=ut
+loadrt cia402_stub   names=stub
+loadrt cia402_homing names=ut
 
+addf ut.update   servo-thread
 addf stub.update servo-thread
-addf ut.update servo-thread
 
-# UT -> stub
+# ------------------------------------------------------------------
+# --- Homing adapter -> stub
+# ------------------------------------------------------------------
+
 net cw  ut.cw  => stub.in-controlword
 net om  ut.om  => stub.in-opmode
 net tp  ut.tp  => stub.in-target-position
 
-# stub -> UT
+# ------------------------------------------------------------------
+# --- Stub -> homing adapter
+# ------------------------------------------------------------------
+
 net sw  stub.out-statusword      => ut.sw
 net omd stub.out-opmode-display  => ut.omd
 net ap  stub.out-actual-position => ut.ap
 
-# setup
-setp ut.scale 1000
-setp ut.cmd   0
+# ------------------------------------------------------------------
+# --- Homing adapter setup
+# ------------------------------------------------------------------
+
+setp ut.enable TRUE
+setp ut.scale  1000
+setp ut.cmd    0
+setp ut.hold   TRUE
+
+setp ut.done-m      0x1400
+setp ut.done-v      0x1400
+setp ut.start-pulse 1
+
+# ------------------------------------------------------------------
+# --- Stub setup (SIM parameters)
+# ------------------------------------------------------------------
 
 setp stub.opmode-apply-delay-cycles 20
-setp stub.homing-run-cycles        50
-setp stub.done-hold-cycles         30
-
-setp ut.done-m 0x1400
-setp ut.done-v 0x1400
-setp ut.start-pulse 1
+setp stub.homing-run-cycles         50
+setp stub.done-hold-cycles          30
