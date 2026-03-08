@@ -178,25 +178,6 @@ Used to validate the complete semantic layer stack.
 
 ---
 
-## Internal Development Workflow
-
-Development workflow standardized for the current environment:
-
-- Windows + Git Bash
-- files generated locally and copied into the repository
-- Git workflow:
-
-```
-git status
-git add
-git commit
-git push
-```
-
-Large code blocks are delivered as downloadable files to avoid formatting issues.
-
----
-
 ## Future Work
 
 Planned evolution areas:
