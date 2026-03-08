@@ -9,10 +9,9 @@ pin in  bit fault_reset   "Fault reset request";
 pin out u32 cw_pds        "Base controlword 6040";
 pin out bit op_enabled    "True when drive is in Operation Enabled";
 pin out bit fault         "True when fault detected";
-pin out s32 state         "Decoded state (DS402 patterns / masked value)";
-pin out s32 reason        "Debug reason code";
+pin out s32 state         "Decoded DS402 state value (recognized pattern or masked fallback)";
+pin out s32 reason        "Diagnostic reason code for current PDS path";
 
-/* Debug: expose the masked patterns we actually decode with */
 pin out u32 st_6f         "sw & 0x006F (DS402 state mask)";
 pin out u32 st_4f         "sw & 0x004F (SOD exception mask)";
 
@@ -38,74 +37,84 @@ license "MIT";
 #define ST_OPERATION_ENABLED      0x0027
 #define ST_FAULT                  0x0008
 
+/* Diagnostic reason codes */
+#define PDS_R_NOT_READY              0
+#define PDS_R_SWITCH_ON_DISABLED     1
+#define PDS_R_READY_TO_SWITCH_ON     2
+#define PDS_R_SWITCHED_ON            3
+#define PDS_R_OPERATION_ENABLED      4
+
+#define PDS_R_FAULT_PRESENT          10
+#define PDS_R_FAULT_RESET_REQUESTED  11
+
+#define PDS_R_UNKNOWN_STATE          20
+
 FUNCTION(update)
 {
-    /* Precompute both masks */
-    uint32_t s6 = sw & 0x006Fu;  /* DS402 mask */
-    uint32_t s4 = sw & 0x004Fu;  /* Exception mask for SOD when QS bit is set */
+    uint32_t s6 = sw & 0x006Fu;
+    uint32_t s4 = sw & 0x004Fu;
 
     st_6f = s6;
     st_4f = s4;
 
-    /* Fault detection (bit 3) */
     fault = (sw & 0x0008u) != 0;
 
     if (fault) {
         cw_pds     = fault_reset ? CMD_FAULT_RESET : CMD_DISABLE_VOLTAGE;
         op_enabled = 0;
         state      = (int32_t)ST_FAULT;
-        reason     = 99; /* fault path */
+        reason     = fault_reset ? PDS_R_FAULT_RESET_REQUESTED
+                                 : PDS_R_FAULT_PRESENT;
         return;
     }
 
     /* Robust SOD decode:
-       Some stubs/drives keep QS (bit5) asserted, which makes (sw & 0x006F) = 0x0060 for SOD.
+       Some stubs/drives keep QS (bit5) asserted, which makes
+       (sw & 0x006F) = 0x0060 for SOD.
        Accept SOD if (sw & 0x004F) == 0x0040.
     */
     if (s4 == ST_SWITCH_ON_DISABLED) {
         op_enabled = 0;
         state      = (int32_t)ST_SWITCH_ON_DISABLED;
-        reason     = 1;
+        reason     = PDS_R_SWITCH_ON_DISABLED;
         cw_pds     = enable ? CMD_SHUTDOWN : CMD_DISABLE_VOLTAGE;
         return;
     }
 
-    /* DS402 decode for remaining states */
     switch (s6) {
 
         case ST_READY_TO_SWITCH_ON:
             op_enabled = 0;
             state      = (int32_t)ST_READY_TO_SWITCH_ON;
-            reason     = 2;
+            reason     = PDS_R_READY_TO_SWITCH_ON;
             cw_pds     = CMD_SWITCH_ON;
             break;
 
         case ST_SWITCHED_ON:
             op_enabled = 0;
             state      = (int32_t)ST_SWITCHED_ON;
-            reason     = 3;
+            reason     = PDS_R_SWITCHED_ON;
             cw_pds     = CMD_ENABLE_OPERATION;
             break;
 
         case ST_OPERATION_ENABLED:
             op_enabled = 1;
             state      = (int32_t)ST_OPERATION_ENABLED;
-            reason     = 12;
+            reason     = PDS_R_OPERATION_ENABLED;
             cw_pds     = CMD_ENABLE_OPERATION;
             break;
 
         case ST_NOT_READY:
             op_enabled = 0;
             state      = (int32_t)ST_NOT_READY;
-            reason     = 0;
+            reason     = PDS_R_NOT_READY;
             cw_pds     = CMD_DISABLE_VOLTAGE;
             break;
 
         default:
-            /* Unknown/transient -> keep safe, non-flapping behavior */
             op_enabled = 0;
             state      = (int32_t)s6;
-            reason     = 99;
+            reason     = PDS_R_UNKNOWN_STATE;
             cw_pds     = enable ? CMD_SHUTDOWN : CMD_DISABLE_VOLTAGE;
             break;
     }
