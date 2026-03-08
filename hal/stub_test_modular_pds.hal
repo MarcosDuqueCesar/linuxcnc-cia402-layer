@@ -1,61 +1,101 @@
-# --- Full modular CiA402 stub validation path ---
+# --- Full modular CiA402 stub validation path with machine policy gate ---
 #
 # Layers:
-#   1) cia402_pds        -> decodes 6041 and generates base cw-pds
-#   2) cia402_homing     -> supervises homing procedure and generates start-out
-#   3) cia402_cw_compose -> final 6040 writer: cw-final = cw-pds | start4
-#   4) cia402_stub       -> simulated CiA402 drive
-#
-# This is the main full-modular validation harness in HAL.
+#   1) machine_safety_gate -> machine-policy gating
+#   2) cia402_pds         -> decodes 6041 and generates base cw-pds
+#   3) cia402_homing      -> supervises homing procedure and generates start-out
+#   4) cia402_cw_compose  -> final 6040 writer: cw-final = cw-pds | start4
+#   5) cia402_stub        -> simulated CiA402 drive
 #
 # Current scope:
+# - machine policy gating integrated into PDS and homing path
 # - PDS state handling
 # - homing procedure handling
 # - deterministic single-writer 6040 composition
 #
 # Not yet included here:
-# - machine_safety_gate integration
 # - real backend/adapter layer
 
-loadrt cia402_stub       names=stub
-loadrt cia402_pds        names=pds
-loadrt cia402_homing     names=ut
-loadrt cia402_cw_compose names=cwcomp
+loadrt machine_safety_gate names=msg
+loadrt cia402_stub         names=stub
+loadrt cia402_pds          names=pds
+loadrt cia402_homing       names=ut
+loadrt cia402_cw_compose   names=cwcomp
+loadrt and2                names=home_gate
 
 # Recommended deterministic order:
-#   pds -> ut -> cwcomp -> stub
-addf pds.update    servo-thread
-addf ut.update     servo-thread
-addf cwcomp.update servo-thread
-addf stub.update   servo-thread
+#   msg -> pds -> home_gate -> ut -> cwcomp -> stub
+addf msg.update       servo-thread
+addf pds.update       servo-thread
+addf home_gate        servo-thread
+addf ut.update        servo-thread
+addf cwcomp.update    servo-thread
+addf stub.update      servo-thread
 
 # ------------------------------------------------------------------
-# --- PDS <-> stub
+# --- Manual machine-policy signals
+# ------------------------------------------------------------------
+#
+# These signals simulate machine-level policy / backend readiness.
+# In a real system they would come from LinuxCNC machine logic,
+# backend status, adapter watchdogs, etc.
+
+newsig estop-ok        bit
+newsig machine-on      bit
+newsig drives-ready    bit
+newsig home-req        bit
+newsig motion-req      bit
+newsig fault-reset-req bit
+
+net estop-ok        => msg.estop-ok
+net machine-on      => msg.machine-on
+net drives-ready    => msg.drives-ready
+net home-req        => msg.homing-req ut.home
+net motion-req      => msg.motion-req
+net fault-reset-req => msg.fault-reset-req
+
+# ------------------------------------------------------------------
+# --- PDS <-> machine policy <-> stub
 # ------------------------------------------------------------------
 
-net sw       stub.out-statusword => pds.sw
-net pds-cw   pds.cw-pds          => cwcomp.cw-pds
+net sw                   stub.out-statusword    => pds.sw
+net allow-enable         msg.allow-enable       => pds.allow-enable
+net allow-fault-reset    msg.allow-fault-reset  => pds.allow-fault-reset
+net pds-cw               pds.cw-pds             => cwcomp.cw-pds
+
+# ------------------------------------------------------------------
+# --- Homing gate path
+# ------------------------------------------------------------------
+# ut.enable must only be TRUE when:
+#   - PDS is in Operation Enabled
+#   - machine policy allows homing
+
+net pds-op-enabled       pds.op-enabled         => home_gate.in0
+net allow-homing         msg.allow-homing       => home_gate.in1
+net ut-enable            home_gate.out          => ut.enable
 
 # ------------------------------------------------------------------
 # --- Homing adapter -> compose -> stub
 # ------------------------------------------------------------------
 
-net start4   ut.start-out        => cwcomp.start4
-net cw       cwcomp.cw-final     => stub.in-controlword
-net om       ut.om               => stub.in-opmode
-net tp       ut.tp               => stub.in-target-position
+net start4               ut.start-out           => cwcomp.start4
+net cw                   cwcomp.cw-final        => stub.in-controlword
+net om                   ut.om                  => stub.in-opmode
+net tp                   ut.tp                  => stub.in-target-position
 
 # ------------------------------------------------------------------
 # --- Stub -> homing adapter
 # ------------------------------------------------------------------
 
-net omd      stub.out-opmode-display  => ut.omd
-net ap       stub.out-actual-position => ut.ap
-net sw       => ut.sw
+net omd                  stub.out-opmode-display  => ut.omd
+net ap                   stub.out-actual-position => ut.ap
+net sw                   => ut.sw
 
 # ------------------------------------------------------------------
 # --- PDS setup
 # ------------------------------------------------------------------
+# enable remains the user / machine request to progress the PDS.
+# machine_safety_gate decides whether that request is actually allowed.
 
 setp pds.enable      TRUE
 setp pds.disable     FALSE
@@ -66,7 +106,6 @@ setp pds.fault-reset FALSE
 # --- Homing adapter setup
 # ------------------------------------------------------------------
 
-setp ut.enable TRUE
 setp ut.scale  1000
 setp ut.cmd    0
 setp ut.hold   TRUE
@@ -87,22 +126,56 @@ setp stub.homing-run-cycles         50
 setp stub.done-hold-cycles          30
 
 # ------------------------------------------------------------------
+# --- Default machine-policy setup for validation
+# ------------------------------------------------------------------
+# Adjust manually with 'sets' during testing.
+
+sets estop-ok        TRUE
+sets machine-on      TRUE
+sets drives-ready    TRUE
+sets home-req        FALSE
+sets motion-req      FALSE
+sets fault-reset-req FALSE
+
+# ------------------------------------------------------------------
 # --- Useful manual interaction points
 # ------------------------------------------------------------------
 #
 # Typical manual actions during validation:
 #
-#   setp ut.home TRUE
-#   setp ut.home FALSE
+#   sets home-req TRUE
+#   sets home-req FALSE
+#
+#   setp pds.quick-stop TRUE
+#   setp pds.quick-stop FALSE
+#
+#   setp pds.fault-reset TRUE
+#   sets fault-reset-req TRUE
+#   setp pds.fault-reset FALSE
+#   sets fault-reset-req FALSE
+#
+#   sets machine-on FALSE
+#   sets machine-on TRUE
+#
+#   sets drives-ready FALSE
+#   sets drives-ready TRUE
 #
 # Useful diagnostics:
 #
+#   show pin msg
 #   show pin pds
+#   show pin home_gate
 #   show pin ut
 #   show pin cwcomp
 #   show pin stub
 #
 # Particularly useful signals:
+#
+#   msg.reason
+#   msg.machine-ok
+#   msg.allow-enable
+#   msg.allow-homing
+#   msg.allow-fault-reset
 #
 #   pds.state
 #   pds.reason
