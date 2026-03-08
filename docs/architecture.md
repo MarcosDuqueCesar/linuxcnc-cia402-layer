@@ -12,21 +12,21 @@ The CiA402 layer acts as a semantic bridge between LinuxCNC motion and CiA402 dr
 
 # Architectural Overview
 
-
+```text
 LinuxCNC motion
-|
-v
+        |
+        v
 machine_safety_gate
-|
-v
+        |
+        v
 CiA402 semantic layer
-|
-v
+        |
+        v
 drive / transport adapter
-|
-v
+        |
+        v
 CiA402 drive (Power Drive System)
-
+```
 
 The architecture is intentionally layered to ensure that each part of the system has a clear responsibility.
 
@@ -92,11 +92,11 @@ Its purpose is to translate between LinuxCNC motion control logic and the CiA402
 
 The semantic layer is composed of several modular HAL components:
 
-
+```text
 cia402_pds
 cia402_homing
 cia402_cw_compose
-
+```
 
 Each module has a clearly defined responsibility.
 
@@ -118,10 +118,10 @@ The implementation uses mask-based decoding to tolerate variations between drive
 
 Examples include masked checks such as:
 
-
+```text
 sw & 0x006F
 sw & 0x004F
-
+```
 
 This improves compatibility with drives that deviate slightly from the canonical CiA402 patterns.
 
@@ -155,9 +155,9 @@ The composition stage merges the base controlword from the PDS manager with proc
 
 Conceptually:
 
-
+```text
 cw_final = cw_pds | start_homing
-
+```
 
 This ensures deterministic controlword generation and prevents multiple components from writing conflicting values.
 
@@ -171,13 +171,13 @@ The execution order is defined using `addf`.
 
 Conceptual execution order:
 
-
+```text
 machine_safety_gate
 → cia402_pds
 → cia402_homing
 → cia402_cw_compose
 → drive / stub
-
+```
 
 Because LinuxCNC HAL threads execute sequentially, there is no real concurrency between these modules.
 
@@ -227,10 +227,10 @@ The CiA402 specification defines multiple operation modes.
 
 The project currently focuses on the modes most relevant to CNC systems:
 
-
+```text
 Cyclic Synchronous Position (CSP)
 Homing Mode (HM)
-
+```
 
 CSP is the preferred mode for CNC applications because the motion trajectory remains controlled by LinuxCNC.
 
@@ -244,12 +244,12 @@ Gantry coordination and axis coupling are considered **machine-level coordinatio
 
 Typical gantry procedures include:
 
-
+```text
 decouple
 home independently
 square gantry
 recouple
-
+```
 
 These mechanisms belong to machine coordination layers above the CiA402 semantic layer.
 
