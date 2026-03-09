@@ -1,50 +1,46 @@
 # linuxcnc-cia402-layer
 
-> **Experimental project.** This repository is a work in progress and is not production-ready or safety-certified for real machines.
+> Experimental project. Not production-ready and not safety certified.
 
-Vendor-agnostic CiA402 (DS402) semantic layer for LinuxCNC.
+Vendor‑agnostic **CiA402 (DS402) semantic layer for LinuxCNC**.
 
-The goal of this project is to separate **machine policy**, **CiA402 protocol semantics**, and **hardware transport/backends**.  
-This allows validating behavior without hardware, keeping LinuxCNC as the motion authority, and reusing the same logic with different backends (EtherCAT, Mesa, simulation).
+The project separates **machine policy**, **CiA402 protocol semantics**, and **hardware transport/backends**.  
+This allows validating behavior without hardware while keeping **LinuxCNC as the motion authority**.
+
+The same semantic layer can be reused with different backends such as:
+
+- EtherCAT
+- Mesa
+- simulation harnesses
+- future adapters
 
 ---
 
 # Architectural Model
 
-```
-LinuxCNC motion
-      ↓
-machine_safety_gate
-      ↓
-CiA402 semantic layer
-      ↓
-drive adapter
-      ↓
-transport / backend
-      ↓
+LinuxCNC motion  
+↓  
+machine_safety_gate  
+↓  
+cia402_pds  
+↓  
+cia402_homing  
+↓  
+cia402_cw_compose  
+↓  
+cia402_drive_adapter  
+↓  
+transport / backend  
+↓  
 drive (Power Drive System)
-```
-
-Responsibilities:
-
-| Layer | Responsibility |
-|------|----------------|
-| LinuxCNC motion | trajectory generation and coordination |
-| machine_safety_gate | machine policy (enable, homing, reset gating) |
-| cia402_pds | CiA402 PDS state machine interpretation |
-| cia402_homing | homing procedure supervision |
-| cia402_cw_compose | deterministic controlword composition |
-| cia402_drive_adapter | boundary between semantic layer and hardware |
-| backend | EtherCAT / Mesa / simulation transport |
-| drive | CiA402 compliant drive |
 
 Key rule:
 
-Only **one component writes the final controlword (6040)**.
+Only **one component writes the final controlword (6040h)**.
 
 ```
-cia402_pds       → base controlword
-cia402_homing    → procedure bits
+cia402_pds        → base controlword intent
+cia402_homing     → procedural bits
 cia402_cw_compose → final controlword
 ```
 
@@ -68,8 +64,10 @@ linuxcnc-cia402-layer
 │
 ├─ docs/
 │   ├─ architecture.md
+│   ├─ drive_integration.md
 │   ├─ error_codes.md
-│   └─ drive_integration.md
+│   ├─ pds_validation_matrix.md
+│   └─ homing_validation_matrix.md
 │
 ├─ LICENSE
 └─ README.md
@@ -79,7 +77,7 @@ linuxcnc-cia402-layer
 
 # Current Scope
 
-The semantic layer currently focuses on CiA402 modes commonly used in CNC systems:
+The semantic layer currently focuses on CiA402 modes typically used in CNC systems:
 
 - CSP (Cyclic Synchronous Position)
 - HM (Homing Mode)
@@ -88,28 +86,30 @@ LinuxCNC remains responsible for trajectory generation while the drive executes 
 
 ---
 
-# Current Status
+# Validation
 
-The repository currently provides:
+The repository includes a **HAL simulation harness** using `cia402_stub`.
 
-- modular CiA402 semantic layer
-- deterministic controlword composition
-- explicit PDS state decoding
-- machine policy gating
-- adapter interface separating hardware transport
-- simulation stub for validation
+This allows validating:
 
-A modular HAL harness is included to validate the full pipeline without requiring real hardware.
+- PDS state transitions
+- homing procedures
+- timeout conditions
+- negative procedural scenarios
+
+All validation can be performed **without real hardware**.
 
 ---
 
 # Documentation
 
-Detailed information is available in:
+Detailed documentation is available in:
 
-- `docs/architecture.md` — system architecture
-- `docs/error_codes.md` — diagnostics and reason codes
-- `docs/drive_integration.md` — backend / hardware integration
+- `docs/architecture.md`
+- `docs/drive_integration.md`
+- `docs/error_codes.md`
+- `docs/pds_validation_matrix.md`
+- `docs/homing_validation_matrix.md`
 
 ---
 

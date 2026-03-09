@@ -50,7 +50,7 @@ Main modules:
 - `cia402_homing`
 - `cia402_cw_compose` (composition ownership, not a fault source by itself)
 
-These modules do **not** replace vendor diagnostics.
+These modules do **not** replace vendor diagnostics.  
 They explain what the semantic layer believes is happening.
 
 ---
@@ -161,301 +161,270 @@ This makes `fault` useful as a high-level stop indicator, while detailed interpr
 
 ### `op_enabled`
 
-`op_enabled` is asserted only when the semantic layer has recognized the DS402 state as `Operation Enabled`.
+`op_enabled` is asserted only when the semantic layer has recognized the DS402 `Operation Enabled` state.
+
+This is an important integration signal because procedures and machine policy may require the drive to be in a fully enabled state before proceeding.
 
 ### `st_6f` and `st_4f`
 
-These are debug outputs exposing the masked statusword values used by the decoder:
+These are debug exposure outputs that show the masked `6041h` patterns used by the decoder:
 
 - `st_6f = sw & 0x006F`
 - `st_4f = sw & 0x004F`
 
-They are useful when debugging ambiguous state decode.
+They are intentionally exposed so runtime observations can be compared directly against the decode logic.
 
-### Important implementation details
-
-#### A. Robust `Switch On Disabled` decode
-
-Some stubs or drives keep QS-related bits in a way that makes the normal `0x006F` mask ambiguous for `Switch On Disabled`.
-
-For that reason, this project accepts `Switch On Disabled` using:
-
-- normal masked decode behavior
-- plus a robust exception path via `st_4f`
-
-This is a semantic-layer decode choice, not a vendor alarm.
-
-#### B. `Quick Stop Active` is a valid DS402 state
-
-`Quick Stop Active` must **not** fall into `UNKNOWN_STATE`.
-
-It is a valid DS402 condition and should be diagnosed explicitly.
-
-#### C. `Fault Reaction Active` is also a valid DS402 state
-
-`Fault Reaction Active` is a real DS402 state and must be separated from both:
-
-- ordinary `Fault`
-- `UNKNOWN_STATE`
-
-This improves diagnostic clarity during transient fault handling.
-
-#### D. Machine-policy gating now affects PDS progression
-
-`cia402_pds` now receives machine-policy gating inputs:
-
-- `allow_enable`
-- `allow_fault_reset`
-
-Effective behavior is therefore based on gated requests, not raw operator intent alone.
-
-Conceptually:
-
-- `effective_enable = enable && allow_enable`
-- `effective_fault_reset = fault_reset && allow_fault_reset`
-
-So a denied enable or denied reset is not automatically a semantic decode problem.
+This is especially useful when validating behavior with simulated or real drives that keep the Quick Stop bit asserted differently.
 
 ---
 
 ## 6. `cia402_homing` diagnostics
 
-`cia402_homing` supervises homing behavior at the semantic/procedural layer.
+`cia402_homing` is a procedural component.
 
-Outputs of interest include:
+It does **not** report drive hardware faults.  
+It reports the state of the homing procedure itself.
+
+Relevant outputs:
 
 - `state`
 - `reason`
-- `active`
-- `done`
-- `error`
-- `done_p`
+- `err`
+- `err-lat`
+- `mode-ok`
+- `mode-tmr`
+- `done-tmr`
+- `prog-tmr`
 
-### Current state values
+### `state`
 
-- `H_S_IDLE`
-- `H_S_WAIT_OMD6`
-- `H_S_SEND_START`
-- `H_S_WAIT_DONE`
-- `H_S_DONE`
-- `H_S_ERROR`
+Current runtime states in the real harness are:
 
-### Current reason values
+- `0`  = `H_S_IDLE`
+- `10` = `H_S_WAIT_OMD6`
+- `11` = `H_S_SEND_START`
+- `12` = `H_S_WAIT_DONE`
+- `13` = `H_S_DONE`
+- `15` = `H_S_ERROR`
 
-- `H_R_IDLE`
-- `H_R_WAITING_MODE_DISPLAY`
-- `H_R_SENDING_START_PULSE`
-- `H_R_WAITING_DONE`
-- `H_R_DONE`
-- `H_R_ERROR_STATUS_MATCH`
-- `H_R_ERROR_EXEC_DROPPED`
-- `H_R_ERROR_INVALID_STATE`
+Meaning:
 
-### Important distinction
+- `H_S_IDLE`: procedure inactive
+- `H_S_WAIT_OMD6`: waiting for homing mode confirmation (`omd == 6`)
+- `H_S_SEND_START`: issuing the homing start pulse
+- `H_S_WAIT_DONE`: homing active, waiting for completion
+- `H_S_DONE`: homing completed successfully
+- `H_S_ERROR`: procedure ended in an error condition
 
-A homing error does not automatically mean the drive itself faulted.
+### `reason`
 
-Examples of semantic/procedural homing errors:
+Current runtime reason codes in the real harness are:
 
-- mode display did not match expected homing mode
-- execution dropped during homing
-- procedure reached an invalid internal state
-- future timeout condition
+- `0`  = `H_R_IDLE`
+- `10` = `H_R_WAITING_MODE_DISPLAY`
+- `11` = `H_R_SENDING_START_PULSE`
+- `12` = `H_R_WAITING_DONE`
+- `13` = `H_R_DONE`
+- `20` = `H_R_ERROR_STATUS_MATCH`
+- `21` = `H_R_ERROR_EXEC_DROPPED`
+- `22` = `H_R_ERROR_INVALID_STATE`
+- `23` = `H_R_ERROR_MODE_TIMEOUT`
+- `24` = `H_R_ERROR_DONE_TIMEOUT`
+- `25` = `H_R_ERROR_PROGRESS_TIMEOUT`
+- `26` = `H_R_ERROR_MODE_LOST`
 
-These are procedure-level conditions.
-They are not the same as `603Fh` or a hardware fault.
+These reason codes are procedural diagnostics, not vendor drive alarms.
+
+### Procedural error meanings
+
+#### `H_R_ERROR_STATUS_MATCH` (`20`)
+
+The procedure detected a statusword/state combination that means execution cannot continue consistently.
+
+This is a semantic mismatch or invalid runtime condition for the procedure.
+
+#### `H_R_ERROR_EXEC_DROPPED` (`21`)
+
+Procedure execution dropped unexpectedly.
+
+Typical meaning:
+
+- enable disappeared
+- gate permission was removed
+- execution path was interrupted externally
+
+This is different from a drive fault. It means the procedure lost the conditions required to continue.
+
+#### `H_R_ERROR_INVALID_STATE` (`22`)
+
+Internal guard for impossible or inconsistent procedural state.
+
+This code is useful for catching unexpected transitions or defensive fallback cases in the component logic.
+
+#### `H_R_ERROR_MODE_TIMEOUT` (`23`)
+
+The procedure requested homing mode but mode confirmation did not arrive before timeout.
+
+In the validated harness this corresponds to:
+
+- `om = 6`
+- expected `omd = 6`
+- timeout reached while waiting in `H_S_WAIT_OMD6`
+
+Validated example:
+
+- `stub.inhibit-mode-ack = TRUE`
+- final `ut.state = 15`
+- final `ut.reason = 23`
+
+#### `H_R_ERROR_DONE_TIMEOUT` (`24`)
+
+The procedure started and remained active, but homing completion did not arrive before the configured done timeout.
+
+Validated example:
+
+- `stub.inhibit-home-done = TRUE`
+- final `ut.state = 15`
+- final `ut.reason = 24`
+
+#### `H_R_ERROR_PROGRESS_TIMEOUT` (`25`)
+
+The procedure did not observe enough progress while homing was active, so the progress watchdog expired.
+
+Validated example:
+
+- `stub.freeze-home-progress = TRUE`
+- final `ut.state = 15`
+- final `ut.reason = 25`
+
+#### `H_R_ERROR_MODE_LOST` (`26`)
+
+Mode confirmation was initially present but was lost while the homing procedure was already active.
+
+Validated example:
+
+- `stub.force-mode-drop = TRUE`
+- final `ut.state = 15`
+- final `ut.reason = 26`
+
+This is intentionally separate from `MODE_TIMEOUT` because the failure happens after procedure start, not during initial mode acquisition.
+
+### `err` and `err-lat`
+
+- `err` indicates an active procedural error condition
+- `err-lat` latches the procedural error for inspection after the transient event
+
+This separation is useful because a short procedural error could otherwise be missed in manual runtime observation.
+
+### `mode-ok`
+
+`mode-ok` indicates whether the expected homing mode confirmation is currently valid.
+
+In the current harness that means confirmation of `omd == 6`.
+
+### Timers
+
+The homing component exposes internal diagnostic timers:
+
+- `mode-tmr`
+- `done-tmr`
+- `prog-tmr`
+
+Purpose:
+
+- `mode-tmr`: tracks wait time for homing mode confirmation
+- `done-tmr`: tracks wait time for final homing completion
+- `prog-tmr`: tracks lack of observable progress during the active homing phase
+
+These outputs are extremely useful during bench validation because they show *which watchdog is actually moving toward failure*.
 
 ---
 
 ## 7. `machine_safety_gate` diagnostics
 
-`machine_safety_gate` is a machine-policy gate.
+`machine_safety_gate` is not a drive diagnostic block.  
+It is a machine-policy decision block.
 
-Outputs of interest include:
+It answers questions such as:
 
-- `machine_ok`
-- `allow_enable`
-- `allow_homing`
-- `allow_motion`
-- `allow_fault_reset`
-- `reason`
+- is machine enable allowed?
+- is homing allowed?
+- is fault reset allowed?
 
-### What it means
+Its outputs should be interpreted as policy decisions, not drive state feedback.
 
-If this module blocks operation, it does **not** necessarily mean:
+Typical integration use:
 
-- the drive is faulted
-- the CiA402 semantic layer is wrong
-- the transport/backend failed at protocol level
-
-It may simply mean machine policy is intentionally blocking progression.
-
-### Current reason codes
-
-Current `machine_safety_gate` reason codes are:
-
-- `0` = `MSG_R_OK`
-- `1` = `MSG_R_BLOCK_ESTOP`
-- `2` = `MSG_R_BLOCK_MACHINE_OFF`
-- `3` = `MSG_R_BLOCK_BACKEND_NOT_READY`
-
-These are policy reasons, not drive alarms.
-
-### Relationship to `cia402_pds`
-
-The current architecture now connects machine-policy gating directly into `cia402_pds`.
-
-This means:
-
-- machine policy may block PDS progression
-- machine policy may block fault reset
-- those situations are not automatically DS402 faults
+- block enable unless machine conditions are valid
+- block homing unless the machine is in a legal state
+- allow reuse across EtherCAT, Mesa, and simulation backends
 
 ---
 
-## 8. Example diagnostic interpretation
+## 8. Practical interpretation rules
 
-### Example A: drive fault present
+When analyzing a stop or unexpected behavior, interpret layers in this order:
 
-Possible observation:
+1. **Drive/backend fault layer**  
+   Check whether the drive itself reports fault or transport failure.
 
-- `cia402_pds.fault = 1`
-- `cia402_pds.state = 0x0008`
-- `cia402_pds.reason = PDS_R_FAULT_PRESENT`
+2. **CiA402 semantic layer**  
+   Check whether `cia402_pds` or `cia402_homing` indicates a semantic/procedural problem.
 
-Meaning:
+3. **Machine-policy layer**  
+   Check whether the machine logic intentionally blocked the action.
 
-- the semantic layer sees a DS402 fault state
-- the drive is faulted
-- next action may require reading `603Fh` or vendor diagnostics
-
-### Example B: fault reaction in progress
-
-Possible observation:
-
-- `cia402_pds.fault = 1`
-- `cia402_pds.state = 0x000F`
-- `cia402_pds.reason = PDS_R_FAULT_REACTION_ACTIVE`
-
-Meaning:
-
-- the drive is still in the DS402 fault-reaction phase
-- this is not the same as steady-state `Fault`
-- recovery logic should wait for the actual post-reaction state
-
-### Example C: machine blocked but no drive fault
-
-Possible observation:
-
-- `machine_safety_gate.machine_ok = 0`
-- `machine_safety_gate.reason = MSG_R_BLOCK_MACHINE_OFF`
-- `cia402_pds.fault = 0`
-
-Meaning:
-
-- machine policy is blocking operation because machine-on is false
-- this is not a drive fault
-
-### Example D: fault reset requested but blocked by policy
-
-Possible observation:
-
-- `fault_reset` request present
-- `machine_safety_gate.allow_fault_reset = 0`
-- `cia402_pds.reason = PDS_R_FAULT_RESET_BLOCKED`
-
-Meaning:
-
-- reset intent exists
-- machine policy denied it
-- this is not the same as the drive rejecting reset
-
-### Example E: homing procedure error without drive fault
-
-Possible observation:
-
-- `cia402_homing.error = 1`
-- `cia402_pds.fault = 0`
-
-Meaning:
-
-- the homing procedure failed semantically or procedurally
-- this does not by itself prove a drive-level alarm
+This avoids a common debugging mistake: blaming the drive for what is actually a policy block, or blaming policy for what is actually a procedural timeout.
 
 ---
 
-## 9. Recommended debugging order
+## 9. Runtime examples
 
-When something goes wrong, debug in this order:
+Examples of correct interpretation:
 
-1. machine-policy layer
-2. semantic-layer state/reason
-3. drive-level diagnostics
+### Example A
 
-Practical questions:
+- `pds.state = 0x0027`
+- `pds.reason = 4`
+- `ut.reason = 23`
 
-### A) Is the machine intentionally blocked?
+Meaning:
 
-Check:
+The drive is semantically in `Operation Enabled`, but homing failed because homing mode confirmation timed out.
 
-- `machine_safety_gate.machine_ok`
-- `machine_safety_gate.reason`
-- `machine_safety_gate.allow_enable`
-- `machine_safety_gate.allow_fault_reset`
+This is **not** a drive hardware fault.
 
-### B) What DS402 state is the semantic layer seeing?
+### Example B
 
-Check:
+- `pds.reason = 13`
 
-- `cia402_pds.state`
-- `cia402_pds.reason`
-- `cia402_pds.st_6f`
-- `cia402_pds.st_4f`
+Meaning:
 
-### C) Is the drive in a valid but non-operational DS402 state?
+The semantic layer sees `Fault Reaction Active`.
 
-Check specifically for:
+This is a fault-class condition at the PDS layer.
 
-- `Quick Stop Active`
-- `Fault Reaction Active`
-- `Switch On Disabled`
+### Example C
 
-### D) Did the drive actually report a fault?
+- machine policy blocks enable
+- no drive fault
+- no homing procedure active
 
-Check:
+Meaning:
 
-- `cia402_pds.fault`
-- `6041h` fault bit
-- `603Fh`
-- vendor diagnostics
-
-### E) Is the problem procedural?
-
-Check:
-
-- `cia402_homing.state`
-- `cia402_homing.reason`
-- `cia402_homing.error`
+The system is being intentionally blocked by machine logic, not by CiA402 drive behavior.
 
 ---
 
-## 10. Design intent summary
+## 10. Diagnostic philosophy
 
-This project intentionally separates:
+The project intentionally keeps diagnostics explicit and layered.
 
-- drive fault reporting
-- semantic interpretation
-- machine policy
+That makes the system:
 
-That separation improves:
+- easier to validate in simulation
+- easier to port to real hardware
+- easier to debug at runtime
+- less ambiguous when multiple subsystems interact
 
-- debug clarity
-- adapter portability
-- simulation fidelity
-- future backend integration
-- maintainability
-
-A blocked machine is not automatically a faulted drive.
-A procedure failure is not automatically a DS402 alarm.
-A DS402 alarm is not automatically a machine-policy decision.
-A valid DS402 transient state is not automatically an unknown state.
+This separation is an important part of the architecture, not just a documentation preference.

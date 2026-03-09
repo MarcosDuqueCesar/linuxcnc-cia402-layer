@@ -19,11 +19,24 @@ param rw u32 homing_done_value = 0x1400;
 
 /* PDS simulation + faults */
 param rw bit pds_sim_enable = FALSE;
-param rw u32 pds_initial_state = 0;            /* 0=SOD, 1=RTSO, 2=SO, 3=OE */
+param rw u32 pds_initial_state = 0;            /* 0=SOD, 1=RTSO, 2=SO, 3=OE, 4=QSA, 5=FRA, 6=FAULT */
 param rw u32 pds_transition_delay_cycles = 20; /* kept for compatibility; ignored in immediate mode */
 
 param rw bit inject_fault = FALSE;             /* force FAULT state */
 param rw u32 fault_reset_delay_cycles = 50;    /* delay after seeing 0x80 to clear fault */
+
+/* Extra PDS state injection */
+param rw bit force_ready_to_switch_on = FALSE;     /* force Ready to Switch On state */
+param rw bit force_switched_on = FALSE;            /* force Switched On state */
+param rw bit force_quick_stop_active = FALSE;      /* force Quick Stop Active state */
+param rw bit force_fault_reaction_active = FALSE;  /* force Fault Reaction Active state */
+
+/* Fault-injection controls for homing robustness validation */
+param rw bit inhibit_mode_ack = FALSE;         /* hold 6061, preventing requested mode from being acknowledged */
+param rw bit inhibit_home_done = FALSE;        /* start homing but never assert done */
+param rw bit freeze_home_progress = FALSE;     /* freeze observable progress during homing */
+param rw bit force_mode_drop = FALSE;          /* after homing starts, force 6061 away from mode 6 */
+param rw s32 forced_opmode_value = 8;          /* value driven on 6061 when force_mode_drop is active */
 
 function update;
 license "MIT";
@@ -32,25 +45,34 @@ license "MIT";
 
 #include <stdint.h>
 
-#define ST_SWITCH_ON_DISABLED    0x0040u
-#define ST_READY_TO_SWITCH_ON    0x0021u
-#define ST_SWITCHED_ON           0x0023u
-#define ST_OPERATION_ENABLED     0x0027u
-#define ST_FAULT                 0x0008u
+#define ST_SWITCH_ON_DISABLED      0x0040u
+#define ST_READY_TO_SWITCH_ON      0x0021u
+#define ST_SWITCHED_ON             0x0023u
+#define ST_OPERATION_ENABLED       0x0027u
+#define ST_QUICK_STOP_ACTIVE       0x0007u
+#define ST_FAULT_REACTION_ACTIVE   0x000Fu
+#define ST_FAULT                   0x0008u
 
-#define SW_BIT_VOLTAGE_ENABLED   (1u<<4)
-#define SW_BIT_QUICK_STOP        (1u<<5)
-#define SW_BIT_REMOTE            (1u<<9)
-#define SW_BIT_FAULT             (1u<<3)
+#define SW_BIT_VOLTAGE_ENABLED     (1u<<4)
+#define SW_BIT_QUICK_STOP          (1u<<5)
+#define SW_BIT_REMOTE              (1u<<9)
+#define SW_BIT_FAULT               (1u<<3)
 
-#define CW_BIT_FAULT_RESET       (1u<<7)
+#define CW_BIT_FAULT_RESET         (1u<<7)
+
+#define CMD_SHUTDOWN               0x0006u
+#define CMD_SWITCH_ON              0x0007u
+#define CMD_ENABLE_OPERATION       0x000Fu
+#define CMD_QUICK_STOP             0x0002u
 
 enum {
     PDS_SOD   = 0,
     PDS_RTSO  = 1,
     PDS_SO    = 2,
     PDS_OE    = 3,
-    PDS_FAULT = 4
+    PDS_QSA   = 4,
+    PDS_FRA   = 5,
+    PDS_FAULT = 6
 };
 
 static int32_t  opmode_shadow;
@@ -65,32 +87,49 @@ static uint32_t pds_state;
 static uint32_t fr_cnt;
 static uint32_t fr_armed;
 
+static int32_t  homing_pos_base;
+static uint32_t homing_pos_phase;
+
 static uint32_t make_statusword_from_pds(uint32_t pds)
 {
     uint32_t sw = 0;
 
-    /* Keep some bits stable/industrial-ish */
-    sw |= SW_BIT_QUICK_STOP;
+    /* Keep remote stable/industrial-ish across states */
     sw |= SW_BIT_REMOTE;
 
     switch (pds) {
         case PDS_SOD:
             sw |= ST_SWITCH_ON_DISABLED;
+            sw |= SW_BIT_QUICK_STOP;
             break;
 
         case PDS_RTSO:
             sw |= ST_READY_TO_SWITCH_ON;
             sw |= SW_BIT_VOLTAGE_ENABLED;
+            sw |= SW_BIT_QUICK_STOP;
             break;
 
         case PDS_SO:
             sw |= ST_SWITCHED_ON;
             sw |= SW_BIT_VOLTAGE_ENABLED;
+            sw |= SW_BIT_QUICK_STOP;
             break;
 
         case PDS_OE:
             sw |= ST_OPERATION_ENABLED;
             sw |= SW_BIT_VOLTAGE_ENABLED;
+            sw |= SW_BIT_QUICK_STOP;
+            break;
+
+        case PDS_QSA:
+            sw |= ST_QUICK_STOP_ACTIVE;
+            sw |= SW_BIT_VOLTAGE_ENABLED;
+            /* Intentionally do not set SW_BIT_QUICK_STOP here, so sw & 0x006F == 0x0007 */
+            break;
+
+        case PDS_FRA:
+            sw |= ST_FAULT_REACTION_ACTIVE;
+            /* Intentionally do not set SW_BIT_QUICK_STOP here, so sw & 0x006F == 0x000F */
             break;
 
         case PDS_FAULT:
@@ -107,18 +146,21 @@ FUNCTION(update)
 {
     (void)period;
 
-    /* Actual position follows target (simple model) */
+    /* Default actual position model */
     out_actual_position = in_target_position;
 
-    /* Opmode display follows requested opmode after a delay */
+    /* Opmode display follows requested opmode after a delay unless acknowledgement is inhibited */
     if (in_opmode != opmode_shadow) {
         opmode_shadow = in_opmode;
         opmode_cnt = 0;
     }
+
     if (opmode_cnt < opmode_apply_delay_cycles) {
         opmode_cnt++;
     } else {
-        out_opmode_display = opmode_shadow;
+        if (!inhibit_mode_ack) {
+            out_opmode_display = opmode_shadow;
+        }
     }
 
     /* One-time init */
@@ -127,11 +169,13 @@ FUNCTION(update)
         if (!pds_sim_enable) {
             pds_state = PDS_OE; /* legacy mode assumes enabled-ish */
         } else {
-            if (pds_initial_state > 3) pds_initial_state = 0;
+            if (pds_initial_state > PDS_FAULT) pds_initial_state = PDS_SOD;
             pds_state = pds_initial_state;
         }
         fr_cnt = 0;
         fr_armed = 0;
+        homing_pos_base = 0;
+        homing_pos_phase = 0;
         init_done = 1;
     }
 
@@ -142,9 +186,18 @@ FUNCTION(update)
         sw = (uint32_t)statusword_base;
     } else {
 
-        /* Fault injection dominates */
-        if (inject_fault) {
+        /* Negative-state injection priority:
+           FRA > FAULT > QSA > SO > RTSO */
+        if (force_fault_reaction_active) {
+            pds_state = PDS_FRA;
+        } else if (inject_fault) {
             pds_state = PDS_FAULT;
+        } else if (force_quick_stop_active) {
+            pds_state = PDS_QSA;
+        } else if (force_switched_on) {
+            pds_state = PDS_SO;
+        } else if (force_ready_to_switch_on) {
+            pds_state = PDS_RTSO;
         }
 
         /* Fault reset: see bit7 (0x80), then clear fault after delay */
@@ -168,25 +221,32 @@ FUNCTION(update)
             fr_armed = 0;
         }
 
-        /* Immediate PDS transitions based on cw lower nibble (deterministic) */
-        if (pds_state != PDS_FAULT) {
+        /* Immediate PDS transitions based on cw lower nibble (deterministic)
+           Only run when no forced state injection is active. */
+        if ((pds_state != PDS_FAULT)
+            && !force_ready_to_switch_on
+            && !force_switched_on
+            && !force_quick_stop_active
+            && !force_fault_reaction_active) {
             uint32_t cmd = ((uint32_t)in_controlword) & 0x000Fu;
 
             if (cmd == 0x0000u) {
                 pds_state = PDS_SOD;
-            } else if (cmd == 0x0006u) {
+            } else if (cmd == CMD_SHUTDOWN) {
                 pds_state = PDS_RTSO;
-            } else if (cmd == 0x0007u) {
+            } else if (cmd == CMD_SWITCH_ON) {
                 pds_state = PDS_SO;
-            } else if (cmd == 0x000Fu) {
+            } else if (cmd == CMD_ENABLE_OPERATION) {
                 pds_state = PDS_OE;
+            } else if (cmd == CMD_QUICK_STOP) {
+                pds_state = PDS_QSA;
             }
         }
 
         sw = make_statusword_from_pds(pds_state);
     }
 
-    /* Homing logic (kept) */
+    /* Homing logic */
     uint32_t cw4 = (in_controlword >> 4) & 1u;
     uint32_t cw4_rise = (cw4 && !cw4_prev);
     cw4_prev = cw4;
@@ -195,17 +255,34 @@ FUNCTION(update)
         homing_active = 1;
         homing_cnt = 0;
         done_cnt = 0;
+        homing_pos_base = out_actual_position;
+        homing_pos_phase = 0;
     }
 
     if (homing_active) {
-        if (homing_cnt < homing_run_cycles) {
+        if (force_mode_drop) {
+            out_opmode_display = forced_opmode_value;
+        }
+
+        if (freeze_home_progress) {
+            out_actual_position = homing_pos_base;
+        } else if (inhibit_home_done) {
+            /* Keep observable activity alive without ever asserting done. */
+            homing_pos_phase ^= 1u;
+            out_actual_position = homing_pos_base + (int32_t)homing_cnt + (int32_t)homing_pos_phase;
             homing_cnt++;
         } else {
-            sw = (sw & ~homing_done_mask) | (homing_done_value & homing_done_mask);
-            if (done_cnt < done_hold_cycles) {
-                done_cnt++;
+            if (homing_cnt < homing_run_cycles) {
+                homing_cnt++;
+                homing_pos_phase ^= 1u;
+                out_actual_position = homing_pos_base + (int32_t)homing_cnt + (int32_t)homing_pos_phase;
             } else {
-                homing_active = 0;
+                sw = (sw & ~homing_done_mask) | (homing_done_value & homing_done_mask);
+                if (done_cnt < done_hold_cycles) {
+                    done_cnt++;
+                } else {
+                    homing_active = 0;
+                }
             }
         }
     }
