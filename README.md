@@ -1,5 +1,7 @@
 # linuxcnc-cia402-layer
 
+> **Experimental project.** This repository is a work in progress and is not production-ready or safety-certified for real machines.
+
 Vendor-agnostic CiA402 (DS402) semantic layer for LinuxCNC.
 
 The goal of this project is to separate **machine policy**, **CiA402 protocol semantics**, and **hardware transport/backends**.  
