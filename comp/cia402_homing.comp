@@ -27,6 +27,12 @@ param rw u32  start_pulse = 1;
 param rw bit  hold        = 1;
 param rw u32  done_pulse_cycles = 50;
 
+/* Robustness / watchdogs (cycles in servo-thread units) */
+param rw u32  mode_timeout_cycles     = 2000;
+param rw u32  done_timeout_cycles     = 120000;
+param rw u32  progress_timeout_cycles = 10000;
+param rw u32  mode_confirm_cycles     = 1;
+
 pin out s32   state;
 pin out s32   reason;
 
@@ -36,6 +42,11 @@ pin out bit   exec_fall;
 pin out bit   start_out;
 pin out bit   done_lat;
 pin out bit   err_lat;
+pin out bit   mode_ok;
+
+pin out u32   mode_tmr;
+pin out u32   done_tmr;
+pin out u32   prog_tmr;
 
 function update;
 license "MIT";
@@ -62,7 +73,11 @@ enum {
 
     H_R_ERROR_STATUS_MATCH        = 20,
     H_R_ERROR_EXEC_DROPPED        = 21,
-    H_R_ERROR_INVALID_STATE       = 22
+    H_R_ERROR_INVALID_STATE       = 22,
+    H_R_ERROR_MODE_TIMEOUT        = 23,
+    H_R_ERROR_DONE_TIMEOUT        = 24,
+    H_R_ERROR_PROGRESS_TIMEOUT    = 25,
+    H_R_ERROR_MODE_LOST           = 26
 };
 
 static int      homed_old;
@@ -73,9 +88,44 @@ static int      done_latched;
 static int      err_latched;
 static uint32_t done_p_cnt;
 
+static uint32_t wait_mode_cnt;
+static uint32_t wait_done_cnt;
+static uint32_t progress_cnt;
+static uint32_t omd_ok_cnt;
+
+static int32_t  last_ap;
+static uint32_t last_sw;
+static int32_t  last_omd;
+static int      progress_init;
+
 static inline int bit_is_set_u32(uint32_t v, int bit)
 {
     return (v >> bit) & 1u;
+}
+
+static void reset_runtime_state(void)
+{
+    start_cnt      = 0;
+    start_sent     = 0;
+    done_latched   = 0;
+    err_latched    = 0;
+    homed_old      = 0;
+    done_p_cnt     = 0;
+
+    wait_mode_cnt  = 0;
+    wait_done_cnt  = 0;
+    progress_cnt   = 0;
+    omd_ok_cnt     = 0;
+    progress_init  = 0;
+}
+
+static void reset_progress_watch(int32_t ap_now, uint32_t sw_now, int32_t omd_now)
+{
+    progress_cnt  = 0;
+    last_ap       = ap_now;
+    last_sw       = sw_now;
+    last_omd      = omd_now;
+    progress_init = 1;
 }
 
 FUNCTION(update)
@@ -91,6 +141,7 @@ FUNCTION(update)
     exec_rise = 0;
     exec_fall = 0;
     start_out = 0;
+    mode_ok   = 0;
 
     if (hold && exec) {
         tp = ap;
@@ -103,63 +154,56 @@ FUNCTION(update)
         om = 6;
     }
 
-    int exec_rise_local = (exec && !exec_prev);
-    int exec_fall_local = (!exec && exec_prev);
-    exec_prev = exec;
+    {
+        int exec_rise_local = (exec && !exec_prev);
+        int exec_fall_local = (!exec && exec_prev);
+        exec_prev = exec;
 
-    exec_rise = exec_rise_local ? 1 : 0;
-    exec_fall = exec_fall_local ? 1 : 0;
+        exec_rise = exec_rise_local ? 1 : 0;
+        exec_fall = exec_fall_local ? 1 : 0;
 
-    if (exec_fall_local) {
-        start_cnt    = 0;
-        start_sent   = 0;
-        done_latched = 0;
-        err_latched  = 1;
+        if (exec_fall_local) {
+            reset_runtime_state();
 
-        homed_old    = 0;
-        done_p_cnt   = 0;
+            err_latched = 1;
+            homed       = 0;
+            homing      = 0;
+            done_p      = 0;
+            done_lat    = 0;
+            err_lat     = 1;
+            mode_ok     = 0;
+            mode_tmr    = 0;
+            done_tmr    = 0;
+            prog_tmr    = 0;
 
-        homed        = 0;
-        homing       = 0;
-        done_p       = 0;
+            state       = H_S_ERROR;
+            reason      = H_R_ERROR_EXEC_DROPPED;
+            return;
+        }
 
-        done_lat     = 0;
-        err_lat      = 1;
+        if (!exec) {
+            reset_runtime_state();
 
-        state        = H_S_ERROR;
-        reason       = H_R_ERROR_EXEC_DROPPED;
-        return;
-    }
+            homed       = 0;
+            homing      = 0;
+            done_p      = 0;
+            done_lat    = 0;
+            err_lat     = 0;
+            mode_ok     = 0;
+            mode_tmr    = 0;
+            done_tmr    = 0;
+            prog_tmr    = 0;
 
-    if (!exec) {
-        start_cnt    = 0;
-        start_sent   = 0;
-        done_latched = 0;
-        err_latched  = 0;
+            state       = H_S_IDLE;
+            reason      = H_R_IDLE;
+            return;
+        }
 
-        homed_old    = 0;
-        done_p_cnt   = 0;
-
-        homed        = 0;
-        homing       = 0;
-        done_p       = 0;
-
-        done_lat     = 0;
-        err_lat      = 0;
-
-        state        = H_S_IDLE;
-        reason       = H_R_IDLE;
-        return;
-    }
-
-    if (exec_rise_local) {
-        start_cnt    = 0;
-        start_sent   = 0;
-        done_latched = 0;
-        err_latched  = 0;
-        done_p_cnt   = 0;
-        state        = H_S_WAIT_OMD6;
-        reason       = H_R_WAITING_MODE_DISPLAY;
+        if (exec_rise_local) {
+            reset_runtime_state();
+            state  = H_S_WAIT_OMD6;
+            reason = H_R_WAITING_MODE_DISPLAY;
+        }
     }
 
     if (state == H_S_IDLE) {
@@ -187,13 +231,37 @@ FUNCTION(update)
 
         case H_S_WAIT_OMD6:
             reason = H_R_WAITING_MODE_DISPLAY;
+
             if (omd == 6) {
-                state = H_S_SEND_START;
+                omd_ok_cnt++;
+                if (omd_ok_cnt >= ((mode_confirm_cycles == 0) ? 1 : mode_confirm_cycles)) {
+                    mode_ok = 1;
+                    reset_progress_watch(ap, sw, omd);
+                    state = H_S_SEND_START;
+                }
+            } else {
+                omd_ok_cnt = 0;
+                if (mode_timeout_cycles != 0) {
+                    wait_mode_cnt++;
+                    if (wait_mode_cnt >= mode_timeout_cycles) {
+                        state       = H_S_ERROR;
+                        err_latched = 1;
+                        reason      = H_R_ERROR_MODE_TIMEOUT;
+                    }
+                }
             }
             break;
 
         case H_S_SEND_START:
-            reason = H_R_SENDING_START_PULSE;
+            reason  = H_R_SENDING_START_PULSE;
+            mode_ok = (omd == 6) ? 1 : 0;
+
+            if (omd != 6) {
+                state       = H_S_ERROR;
+                err_latched = 1;
+                reason      = H_R_ERROR_MODE_LOST;
+                break;
+            }
 
             if (!start_sent && !done_latched && !err_latched) {
                 if (start_cnt < start_pulse) {
@@ -208,18 +276,53 @@ FUNCTION(update)
             }
 
             if (start_sent) {
+                reset_progress_watch(ap, sw, omd);
                 state = H_S_WAIT_DONE;
             }
             break;
 
         case H_S_WAIT_DONE:
-            reason = H_R_WAITING_DONE;
+            reason  = H_R_WAITING_DONE;
+            mode_ok = (omd == 6) ? 1 : 0;
+
+            if (omd != 6) {
+                state       = H_S_ERROR;
+                err_latched = 1;
+                reason      = H_R_ERROR_MODE_LOST;
+                break;
+            }
 
             if (!err_latched && err_match) {
                 err_latched = 1;
                 state = H_S_ERROR;
                 reason = H_R_ERROR_STATUS_MATCH;
                 break;
+            }
+
+            if (!progress_init) {
+                reset_progress_watch(ap, sw, omd);
+            } else {
+                if (ap != last_ap || sw != last_sw || omd != last_omd) {
+                    reset_progress_watch(ap, sw, omd);
+                } else if (progress_timeout_cycles != 0) {
+                    progress_cnt++;
+                    if (progress_cnt >= progress_timeout_cycles) {
+                        state       = H_S_ERROR;
+                        err_latched = 1;
+                        reason      = H_R_ERROR_PROGRESS_TIMEOUT;
+                        break;
+                    }
+                }
+            }
+
+            if (done_timeout_cycles != 0) {
+                wait_done_cnt++;
+                if (wait_done_cnt >= done_timeout_cycles) {
+                    state       = H_S_ERROR;
+                    err_latched = 1;
+                    reason      = H_R_ERROR_DONE_TIMEOUT;
+                    break;
+                }
             }
 
             if (!done_latched && start_sent && done_match && !err_match) {
@@ -229,7 +332,8 @@ FUNCTION(update)
             break;
 
         case H_S_DONE:
-            reason = H_R_DONE;
+            reason  = H_R_DONE;
+            mode_ok = (omd == 6) ? 1 : 0;
             break;
 
         case H_S_ERROR:
@@ -238,7 +342,11 @@ FUNCTION(update)
             }
             if (reason != H_R_ERROR_STATUS_MATCH &&
                 reason != H_R_ERROR_EXEC_DROPPED &&
-                reason != H_R_ERROR_INVALID_STATE) {
+                reason != H_R_ERROR_INVALID_STATE &&
+                reason != H_R_ERROR_MODE_TIMEOUT &&
+                reason != H_R_ERROR_DONE_TIMEOUT &&
+                reason != H_R_ERROR_PROGRESS_TIMEOUT &&
+                reason != H_R_ERROR_MODE_LOST) {
                 reason = H_R_ERROR_INVALID_STATE;
             }
             break;
@@ -256,6 +364,10 @@ FUNCTION(update)
 
     done_lat = done_latched ? 1 : 0;
     err_lat  = err_latched ? 1 : 0;
+
+    mode_tmr = wait_mode_cnt;
+    done_tmr = wait_done_cnt;
+    prog_tmr = progress_cnt;
 
     if (homed && !homed_old) {
         uint32_t n = done_pulse_cycles;
