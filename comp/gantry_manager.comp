@@ -1,0 +1,99 @@
+component gantry_manager "Dual-servo gantry coordinator with coupled/decoupled position routing and skew supervision";
+
+pin in  bit   enable              "Gantry supervision enabled";
+pin in  bit   couple_enable       "TRUE = coupled mode, FALSE = decoupled mode";
+pin in  bit   reset_fault         "Reset latched gantry fault";
+
+pin in  float axis_cmd_pos        "Common gantry axis command in coupled mode";
+pin in  float decoupled_cmd_x1    "Independent command for X1 in decoupled mode";
+pin in  float decoupled_cmd_x2    "Independent command for X2 in decoupled mode";
+
+pin in  float axis_feedback_x1    "Position feedback from gantry side X1";
+pin in  float axis_feedback_x2    "Position feedback from gantry side X2";
+pin in  float skew_limit          "Maximum allowed absolute skew before gantry fault";
+pin in  bit   latch_fault         "TRUE = latch skew fault until reset_fault";
+
+pin out float cmd_x1              "Position command routed to drive X1";
+pin out float cmd_x2              "Position command routed to drive X2";
+
+pin out float skew_error          "Absolute structural skew: |X1 - X2|";
+pin out bit   gantry_ok           "TRUE when gantry is allowed to operate";
+pin out bit   gantry_fault        "TRUE when skew fault is active";
+pin out bit   coupled_active      "TRUE when component is in coupled mode";
+pin out s32   reason              "Diagnostic reason code";
+
+function update;
+license "MIT";
+
+;;
+
+#include <math.h>
+
+#define GM_R_IDLE                    0
+#define GM_R_COUPLED_OK              1
+#define GM_R_DECOUPLED_OK            2
+#define GM_R_SKEW_FAULT_ACTIVE      10
+#define GM_R_SKEW_FAULT_LATCHED     11
+#define GM_R_INVALID_SKEW_LIMIT     20
+
+FUNCTION(update)
+{
+    float local_skew;
+    int over_limit;
+
+    local_skew = fabsf(axis_feedback_x1 - axis_feedback_x2);
+    skew_error = local_skew;
+
+    coupled_active = 0;
+    gantry_ok = 0;
+    reason = GM_R_IDLE;
+
+    if (skew_limit < 0.0f) {
+        gantry_fault = 1;
+        cmd_x1 = axis_feedback_x1;
+        cmd_x2 = axis_feedback_x2;
+        reason = GM_R_INVALID_SKEW_LIMIT;
+        return;
+    }
+
+    over_limit = enable && (local_skew > skew_limit);
+
+    if (reset_fault) {
+        gantry_fault = 0;
+    }
+
+    if (latch_fault) {
+        if (over_limit) {
+            gantry_fault = 1;
+        }
+    } else {
+        gantry_fault = over_limit ? 1 : 0;
+    }
+
+    if (gantry_fault) {
+        /*
+         * Important structural behavior:
+         * on skew fault, command each side to hold its own present position.
+         * This avoids forcing one side to chase the other through the bridge.
+         */
+        cmd_x1 = axis_feedback_x1;
+        cmd_x2 = axis_feedback_x2;
+        gantry_ok = 0;
+        reason = latch_fault ? GM_R_SKEW_FAULT_LATCHED : GM_R_SKEW_FAULT_ACTIVE;
+        return;
+    }
+
+    gantry_ok = 1;
+
+    if (couple_enable) {
+        coupled_active = 1;
+        cmd_x1 = axis_cmd_pos;
+        cmd_x2 = axis_cmd_pos;
+        reason = GM_R_COUPLED_OK;
+        return;
+    }
+
+    cmd_x1 = decoupled_cmd_x1;
+    cmd_x2 = decoupled_cmd_x2;
+    reason = GM_R_DECOUPLED_OK;
+}
