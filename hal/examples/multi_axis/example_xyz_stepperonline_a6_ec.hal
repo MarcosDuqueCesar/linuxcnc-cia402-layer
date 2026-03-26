@@ -1,0 +1,29 @@
+# hal/examples/multi_axis/example_xyz_stepperonline_a6_ec.hal
+#
+# XYZ experimental wrapper for Stepperonline A6-EC
+#
+# IMPORTANT
+# - experimental / not runtime validated
+# - replicates validated single-axis semantic pipeline per axis
+# - does NOT introduce new semantics
+#
+# PROFILE
+# - stepperonline_a6_ec (CiA402 EtherCAT)
+#
+# ROLE
+# - prepares multi-axis structure for future real hardware validation
+#
+# NOTE
+# - each axis must map to a distinct EtherCAT slave
+# - binding still occurs in adapters layer
+# - this file remains transport-agnostic
+
+# -----------------------------
+# TOPOLOGY (multi-axis)
+# -----------------------------
+source hal/topology/multi_axis/multi_axis_base.hal
+
+# -----------------------------
+# BINDINGS
+# -----------------------------
+source hal/adapters/stepperonline_a6_ec_xyz_binding.hal

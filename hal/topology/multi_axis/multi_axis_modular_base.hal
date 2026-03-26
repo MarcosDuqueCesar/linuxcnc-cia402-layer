@@ -1,0 +1,168 @@
+# --- Multi-axis topology assembly (XY) for the modular CiA402 framework ---
+#
+# Role:
+# - assemble the multi-axis (XY) runtime topology
+# - reuse core_multi blocks (per-axis instantiation)
+# - keep topology glue and wiring here
+#
+# NOTE:
+# - this is the modular equivalent of the legacy multi-axis harness
+# - core logic is sourced from hal/core_multi/
+# - X and Y axes remain fully independent
+
+source hal/core_multi/cia402_base_xy.hal
+source hal/core_multi/cia402_faults_xy.hal
+source hal/core_multi/cia402_homing_supervision_xy.hal
+source hal/core_multi/cia402_quick_stop_xy.hal
+
+# ------------------------------------------------------------------
+# --- Topology-specific components
+# ------------------------------------------------------------------
+
+loadrt and2               names=home_gate_x,home_gate_y
+loadrt conv_s32_float     names=apf_x,apf_y
+loadrt scale              names=fb_units_x,fb_units_y
+loadrt fault_injector_x   names=fault_inj_x,fault_inj_y
+
+addf home_gate_x          servo-thread
+addf home_gate_y          servo-thread
+addf fault_inj_x.update   servo-thread
+addf fault_inj_y.update   servo-thread
+addf apf_x                servo-thread
+addf apf_y                servo-thread
+addf fb_units_x           servo-thread
+addf fb_units_y           servo-thread
+
+# ------------------------------------------------------------------
+# --- Machine policy signals (implicit creation)
+# ------------------------------------------------------------------
+
+net estop-ok        => msg_x.estop-ok msg_y.estop-ok
+net machine-on      => msg_x.machine-on msg_y.machine-on
+net drives-ready    => msg_x.drives-ready msg_y.drives-ready
+
+net home-req-x      => msg_x.homing-req ut_x.home
+net home-req-y      => msg_y.homing-req ut_y.home
+
+net motion-req-x    => msg_x.motion-req mcsp_x.motion-req
+net motion-req-y    => msg_y.motion-req mcsp_y.motion-req
+
+net fault-reset-x   => msg_x.fault-reset-req pds_x.fault-reset
+net fault-reset-y   => msg_y.fault-reset-req pds_y.fault-reset
+
+# ------------------------------------------------------------------
+# --- Planner bridge (X/Y)
+# ------------------------------------------------------------------
+
+net xpos-cmd        => ut_x.cmd mcsp_x.pos-cmd
+net ypos-cmd        => ut_y.cmd mcsp_y.pos-cmd
+
+# ------------------------------------------------------------------
+# --- Statusword path (with fault injection)
+# ------------------------------------------------------------------
+
+newsig sw-raw-x u32
+newsig sw-raw-y u32
+
+net sw-raw-x        adapter_x.out-statusword => fault_inj_x.sw-in
+net sw-x            fault_inj_x.sw-out       => pds_x.sw ut_x.sw
+
+net sw-raw-y        adapter_y.out-statusword => fault_inj_y.sw-in
+net sw-y            fault_inj_y.sw-out       => pds_y.sw ut_y.sw
+
+# ------------------------------------------------------------------
+# --- PDS / motion enable path
+# ------------------------------------------------------------------
+
+net allow-enable-x      msg_x.allow-enable      => pds_x.allow-enable mcsp_x.enable
+net allow-enable-y      msg_y.allow-enable      => pds_y.allow-enable mcsp_y.enable
+
+net allow-fault-reset-x msg_x.allow-fault-reset => pds_x.allow-fault-reset
+net allow-fault-reset-y msg_y.allow-fault-reset => pds_y.allow-fault-reset
+
+net allow-motion-x      msg_x.allow-motion      => mcsp_x.allow-motion
+net allow-motion-y      msg_y.allow-motion      => mcsp_y.allow-motion
+
+# ------------------------------------------------------------------
+# --- Controlword composition
+# ------------------------------------------------------------------
+
+net pds-cw-x   pds_x.cw-pds => cw_x.cw-pds
+net pds-cw-y   pds_y.cw-pds => cw_y.cw-pds
+
+net cw-final-x cw_x.cw-final => adapter_x.in-controlword
+net cw-final-y cw_y.cw-final => adapter_y.in-controlword
+
+# ------------------------------------------------------------------
+# --- Homing gate
+# ------------------------------------------------------------------
+
+net allow-homing-x msg_x.allow-homing => home_gate_x.in1
+net allow-homing-y msg_y.allow-homing => home_gate_y.in1
+
+net ut-enable-x    home_gate_x.out    => ut_x.enable
+net ut-enable-y    home_gate_y.out    => ut_y.enable
+
+# ------------------------------------------------------------------
+# --- Feedback path
+# ------------------------------------------------------------------
+
+net ap-x        adapter_x.out-actual-position => ut_x.ap apf_x.in
+net apf-out-x   apf_x.out                     => fb_units_x.in
+net fb-x        fb_units_x.out                => mcsp_x.pos-fb fault_inj_x.pos-fb-in
+
+net ap-y        adapter_y.out-actual-position => ut_y.ap apf_y.in
+net apf-out-y   apf_y.out                     => fb_units_y.in
+net fb-y        fb_units_y.out                => mcsp_y.pos-fb fault_inj_y.pos-fb-in
+
+newsig fb-wd-x float
+newsig fb-wd-y float
+
+net fb-wd-x     fault_inj_x.pos-fb-out => motion_wd_x.pos-fb
+net fb-wd-y     fault_inj_y.pos-fb-out => motion_wd_y.pos-fb
+
+# ------------------------------------------------------------------
+# --- Motion watchdog wiring
+# ------------------------------------------------------------------
+
+net allow-motion-x      => motion_wd_x.enable
+net motion-req-x        => motion_wd_x.motion-req
+net mcsp-ready-x        => motion_wd_x.csp-ready
+net pds-op-enabled-x    => motion_wd_x.op-enabled
+net xpos-cmd            => motion_wd_x.pos-cmd
+
+net allow-motion-y      => motion_wd_y.enable
+net motion-req-y        => motion_wd_y.motion-req
+net mcsp-ready-y        => motion_wd_y.csp-ready
+net pds-op-enabled-y    => motion_wd_y.op-enabled
+net ypos-cmd            => motion_wd_y.pos-cmd
+
+# ------------------------------------------------------------------
+# --- Default setup
+# ------------------------------------------------------------------
+
+setp pds_x.enable TRUE
+setp pds_y.enable TRUE
+
+setp ut_x.scale 1000
+setp ut_y.scale 1000
+
+setp mcsp_x.scale 1000
+setp mcsp_y.scale 1000
+
+setp fb_units_x.gain 0.001
+setp fb_units_y.gain 0.001
+
+# ------------------------------------------------------------------
+# --- Default machine state
+# ------------------------------------------------------------------
+
+sets estop-ok TRUE
+sets machine-on TRUE
+sets drives-ready TRUE
+
+sets home-req-x FALSE
+sets home-req-y FALSE
+
+sets motion-req-x FALSE
+sets motion-req-y FALSE

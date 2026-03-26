@@ -1,0 +1,70 @@
+# ------------------------------------------------------------------
+# observability_minimal.hal
+# ------------------------------------------------------------------
+# Purpose:
+# - provide a stable, read-only observability baseline for X/Y runtime
+# - expose invariant-monitor diagnostics as top-level signals
+# - keep observability passive and append-only
+#
+# Usage:
+# - source this file AFTER the X/Y harness has loaded invmon_x and invmon_y
+# - safe to keep loaded continuously; it does not alter semantics
+# - this file intentionally does NOT refactor existing signal names
+#
+# Notes:
+# - motion/home/core semantic signals already exist in the runtime with names such as:
+#     motion-watchdog-fault-x
+#     motion-watchdog-latched-x
+#     motion-watchdog-code-x
+#     home-watchdog-fault-x
+#     home-watchdog-latched-x
+#     home-watchdog-code-x
+#     mux-sel-home-x
+#     mux-sel-csp-x
+#     mcsp-owner-x
+#     mcsp-ready-x
+#     ut-owner-x
+#     ut-state-x
+#     pds-op-enabled-x
+#   and the corresponding -y variants.
+# - the invariant monitor diagnostic outputs were not yet normalized as top-level signals.
+#   this file exposes them without changing any existing behavior.
+# ------------------------------------------------------------------
+
+# ---------------------------
+# X axis invariant monitor
+# ---------------------------
+newsig invmon-err-latched-x bit
+newsig invmon-err-count-x u32
+newsig invmon-first-error-code-x u32
+newsig invmon-err-mux-conflict-x bit
+newsig invmon-err-csp-without-owner-x bit
+newsig invmon-err-home-without-owner-x bit
+newsig invmon-err-ready-without-owner-x bit
+
+net invmon-err-latched-x            invmon_x.err-latched
+net invmon-err-count-x              invmon_x.err-count
+net invmon-first-error-code-x       invmon_x.first-error-code
+net invmon-err-mux-conflict-x       invmon_x.err-mux-conflict
+net invmon-err-csp-without-owner-x  invmon_x.err-csp-without-owner
+net invmon-err-home-without-owner-x invmon_x.err-home-without-owner
+net invmon-err-ready-without-owner-x invmon_x.err-ready-without-owner
+
+# ---------------------------
+# Y axis invariant monitor
+# ---------------------------
+newsig invmon-err-latched-y bit
+newsig invmon-err-count-y u32
+newsig invmon-first-error-code-y u32
+newsig invmon-err-mux-conflict-y bit
+newsig invmon-err-csp-without-owner-y bit
+newsig invmon-err-home-without-owner-y bit
+newsig invmon-err-ready-without-owner-y bit
+
+net invmon-err-latched-y            invmon_y.err-latched
+net invmon-err-count-y              invmon_y.err-count
+net invmon-first-error-code-y       invmon_y.first-error-code
+net invmon-err-mux-conflict-y       invmon_y.err-mux-conflict
+net invmon-err-csp-without-owner-y  invmon_y.err-csp-without-owner
+net invmon-err-home-without-owner-y invmon_y.err-home-without-owner
+net invmon-err-ready-without-owner-y invmon_y.err-ready-without-owner

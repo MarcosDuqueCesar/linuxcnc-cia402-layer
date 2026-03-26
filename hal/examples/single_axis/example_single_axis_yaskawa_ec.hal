@@ -1,0 +1,19 @@
+# hal/examples/single_axis/example_single_axis_yaskawa_ec.hal
+#
+# Single-axis pilot wrapper for Yaskawa EtherCAT binding.
+#
+# PURPOSE
+# - keep validated CiA402 semantic core unchanged
+# - keep validated single-axis topology unchanged
+# - introduce Yaskawa profile at wrapper level
+# - include Yaskawa binding scaffold
+#
+# IMPORTANT
+# - do NOT load core here (topology already does)
+# - do NOT create backend here
+# - do NOT rewire pipeline here
+
+source hal/topology/single_axis/single_axis_base.hal
+
+# Yaskawa single-axis binding scaffold
+source hal/adapters/yaskawa_ec_single_axis_binding.hal

@@ -1,28 +1,28 @@
-# LinuxCNC runtime/generated
-linuxcnc.var
-linuxcnc.var.bak
-*.pyc
-__pycache__/
-
-# HAL/temporary outputs captured during tests
-stub.in-controlword
-stub.in-opmode
-stub.in-target-position
-ut.ap
-ut.omd
-ut.sw
-
-# Build/generated artifacts
-*.so
-*.o
-*.c
-*.bak
-*~
-
-# Local organization folders that should not go to GitHub
+# Runtime / generated
+test_runtime_*
+analysis_*
 runtime/
+logs/
+outbox/
 
-# Optional editor/system noise
-.DS_Store
-Thumbs.db
-archive/
+# Archives
+*.zip
+
+# LinuxCNC state
+linuxcnc.var*
+*.err-lat
+*.cmd
+*.reset
+*.csp-ready
+*.home-active
+
+# Backups
+*.bak*
+*.bkp*
+
+# Build artifacts
+*.so
+
+# Temp
+*~
+*.tmp

@@ -1,0 +1,195 @@
+profile_version: 1
+profile_kind: ciA402_driver_profile
+
+identity:
+  name: lichuan_ol57e4a_cl57e4a_ec
+  vendor: lichuan
+  model: OL57E-4A / CL57E-4A
+  transport: ethercat
+  workspace_base: ~/linuxcnc/configs/opc_validation
+  intended_path: profiles/driver/lichuan_ol57e4a_cl57e4a_ec.driver.yaml
+  description: Lichuan OL57E-4A / CL57E-4A EtherCAT CiA402 driver integration contract for the opc_validation framework
+
+contract:
+  declarative_only: true
+  no_logic_inside_profile: true
+  no_semantic_override: true
+  no_pipeline_change: true
+  per_axis_isolation_required: true
+  single_writer_required: true
+  third_party_facing: true
+
+capabilities:
+  cia402: true
+  modes:
+    csp: true
+    homing: true
+  supervision:
+    motion_watchdog: true
+    home_watchdog: true
+  observability:
+    invmon: true
+    watchdog_visibility: true
+  fault_injection_architecture_present: true
+  multi_axis_validated: true
+  fault_reset_supported: true
+
+backend_contract:
+  minimal_required_signals:
+    commands:
+      - controlword
+      - opmode_command
+      - target_position
+    feedback:
+      - statusword
+      - opmode_display
+      - actual_position
+  adapter_component: cia402_backend_adapter
+  adapter_pins:
+    in_controlword:
+      kind: pin
+      name: adapter_{axis}.in-controlword
+    in_opmode:
+      kind: pin
+      name: adapter_{axis}.in-opmode
+    in_target_position:
+      kind: pin
+      name: adapter_{axis}.in-target-position
+    out_statusword:
+      kind: pin
+      name: adapter_{axis}.out-statusword
+    out_opmode_display:
+      kind: pin
+      name: adapter_{axis}.out-opmode-display
+    out_actual_position:
+      kind: pin
+      name: adapter_{axis}.out-actual-position
+
+statusword_contract:
+  source: CiA402 statusword provided by backend adapter / drive mapping
+  semantics_owner: framework
+  decode_reference:
+    ready_to_switch_on: 0
+    switched_on: 1
+    operation_enabled: 2
+    fault: 3
+    voltage_enabled: 4
+    quick_stop: 5
+    remote: 9
+    target_reached: 10
+    homing_attained: 12
+    homing_error: 13
+  notes:
+    - Bit meanings follow standard CiA402 interpretation
+    - Quick stop bit presence does not imply validated QS behavior for this drive
+    - QS behavior must be confirmed experimentally before promotion to validated
+
+control_authority:
+  controlword_final_writer:
+    template: cw_{axis}.controlword
+  opmode_final_writer:
+    template: mux_{axis}.om
+  target_position_final_writer:
+    template: mux_{axis}.tp
+  authority_rules:
+    - controlword must have a single final writer per axis
+    - operation mode must be selected by framework semantic path
+    - target position must come from framework arbitration path
+    - topology must not introduce parallel writers
+
+scaling:
+  command_domain: framework floating-point position domain
+  feedback_domain: backend raw actual-position domain bridged to framework float domain
+  watchdog_feedback_domain: scaled floating-point feedback used by watchdogs
+  bridge_path:
+    counts_to_float_component_template: conv_s32_float.{axis}
+    units_scale_component_template: fb_units_{axis}
+  per_axis_defaults:
+    x:
+      counts_per_unit: 1.0
+      feedback_scale: 1.0
+      command_scale: 1.0
+    y:
+      counts_per_unit: 1.0
+      feedback_scale: 1.0
+      command_scale: 1.0
+    z:
+      counts_per_unit: 1.0
+      feedback_scale: 1.0
+      command_scale: 1.0
+  rules:
+    - command and feedback domains must be coherent before watchdog evaluation
+    - per-axis scaling may vary without changing semantic core
+    - scaling errors are integration faults, not semantic faults
+
+axes:
+  x:
+    logical_axis: x
+    adapter_instance: adapter_x
+    command_signals:
+      controlword: adapter_x.in-controlword
+      opmode_command: adapter_x.in-opmode
+      target_position: adapter_x.in-target-position
+    feedback_signals:
+      statusword: adapter_x.out-statusword
+      opmode_display: adapter_x.out-opmode-display
+      actual_position: adapter_x.out-actual-position
+
+  y:
+    logical_axis: y
+    adapter_instance: adapter_y
+    command_signals:
+      controlword: adapter_y.in-controlword
+      opmode_command: adapter_y.in-opmode
+      target_position: adapter_y.in-target-position
+    feedback_signals:
+      statusword: adapter_y.out-statusword
+      opmode_display: adapter_y.out-opmode-display
+      actual_position: adapter_y.out-actual-position
+
+  z:
+    logical_axis: z
+    adapter_instance: adapter_z
+    command_signals:
+      controlword: adapter_z.in-controlword
+      opmode_command: adapter_z.in-opmode
+      target_position: adapter_z.in-target-position
+    feedback_signals:
+      statusword: adapter_z.out-statusword
+      opmode_display: adapter_z.out-opmode-display
+      actual_position: adapter_z.out-actual-position
+
+integration_rules:
+  required_runtime_functions:
+    - msg.update
+    - pds.update
+    - mcsp.update
+    - mux.update
+    - cw.update
+    - adapter.update
+  required_runtime_properties:
+    - single writer discipline on controlword
+    - HOME has priority over CSP
+    - watchdog feedback path must be scaled before supervision
+    - semantic path must remain backend-agnostic
+  forbidden_behaviors:
+    - direct backend writes bypassing framework arbitration
+    - multiple controlword writers for same axis
+    - topology-specific semantics embedded inside driver profile
+    - runtime logic implemented inside declarative profile
+  validation_script: scripts/validate_driver_profile.sh
+  expected_axes: 3
+
+watchdog_semantics:
+  motion_watchdog:
+    fault_is_instantaneous: true
+    latch_is_persistent_until_reset: true
+    response_timeout_supported: true
+    stall_supported: true
+    tracking_error_supported: true
+    quick_stop_supervised_as_event: true
+
+third_party_contract:
+  consumer_needs_internal_hal_knowledge: false
+  profile_is_runtime_executable: false
+  provides_integration_contract: true

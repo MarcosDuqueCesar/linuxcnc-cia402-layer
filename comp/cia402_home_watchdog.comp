@@ -1,0 +1,192 @@
+component cia402_home_watchdog "Passive home supervision watchdog over cia402_homing (UT) signals";
+
+pin in bit enable          "Supervision enabled";
+pin in bit home_req        "Semantic home request";
+pin in bit home_owner      "UT owns homing flow";
+pin in bit homing          "UT reports active homing";
+pin in bit homed           "UT reports homed";
+pin in bit done_lat        "UT latched done";
+pin in bit err_lat         "UT latched error";
+pin in bit mode_ok         "UT confirmed homing mode";
+pin in s32 state           "UT state";
+pin in s32 reason          "UT reason";
+pin in u32 mode_tmr        "UT mode timer";
+pin in u32 done_tmr        "UT done timer";
+pin in u32 prog_tmr        "UT progress timer";
+pin in bit reset           "Manual reset for latched diagnostics";
+
+param rw u32 owner_timeout_cycles = 2000   "Max cycles from home_req to owner/homing";
+param rw u32 mode_timeout_limit   = 2000   "Expected upper bound for mode_tmr";
+param rw u32 done_timeout_limit   = 120000 "Expected upper bound for done_tmr";
+param rw u32 prog_timeout_limit   = 10000  "Expected upper bound for prog_tmr";
+
+pin out bit armed                 "Watchdog is supervising home request";
+pin out bit owner_pending         "Waiting for owner/homing after request";
+pin out bit no_owner_on_request   "Home request present but no owner/homing in time";
+pin out bit no_mode_confirm       "Home flow active but mode_ok missing too long";
+pin out bit progress_timeout_seen "Observed progress timer limit violation";
+pin out bit done_timeout_seen     "Observed done timer limit violation";
+pin out bit homing_error_latched  "Observed UT err_lat";
+pin out bit done_inconsistent     "Observed homed/done_lat outside coherent home flow";
+
+pin out bit fault                 "Aggregate watchdog fault";
+pin out bit fault_latched         "Latched aggregate watchdog fault";
+pin out u32 fault_code            "Current fault code: 0 none, 1 no owner, 2 no mode, 3 progress timeout, 4 done timeout, 5 err_lat, 6 done inconsistent";
+pin out u32 first_fault_code      "First latched fault code";
+
+pin out u32 owner_tmr             "Cycles waiting for owner/homing";
+pin out s32 state_snapshot        "Current UT state snapshot";
+pin out s32 reason_snapshot       "Current UT reason snapshot";
+
+variable hal_u32_t owner_wait_cnt;
+variable hal_bit_t request_seen;
+variable hal_bit_t owner_seen_once;
+variable hal_bit_t homing_seen_once;
+variable hal_bit_t valid_home_flow_seen;
+
+function update;
+license "MIT";
+
+;;
+
+FUNCTION(update)
+{
+    int active_flow;
+    int current_fault_code = 0;
+
+    if (reset) {
+        armed                 = 0;
+        owner_pending         = 0;
+        no_owner_on_request   = 0;
+        no_mode_confirm       = 0;
+        progress_timeout_seen = 0;
+        done_timeout_seen     = 0;
+        homing_error_latched  = 0;
+        done_inconsistent     = 0;
+        fault                 = 0;
+        fault_latched         = 0;
+        fault_code            = 0;
+        first_fault_code      = 0;
+        owner_tmr             = 0;
+        state_snapshot        = state;
+        reason_snapshot       = reason;
+
+        owner_wait_cnt        = 0;
+        request_seen          = 0;
+        owner_seen_once       = 0;
+        homing_seen_once      = 0;
+        valid_home_flow_seen  = 0;
+        return;
+    }
+
+    state_snapshot = state;
+    reason_snapshot = reason;
+
+    if (!enable) {
+        armed                 = 0;
+        owner_pending         = 0;
+        no_owner_on_request   = 0;
+        no_mode_confirm       = 0;
+        progress_timeout_seen = 0;
+        done_timeout_seen     = 0;
+        homing_error_latched  = 0;
+        done_inconsistent     = 0;
+        fault                 = 0;
+        fault_code            = 0;
+        owner_tmr             = 0;
+
+        owner_wait_cnt        = 0;
+        request_seen          = 0;
+        owner_seen_once       = 0;
+        homing_seen_once      = 0;
+        valid_home_flow_seen  = 0;
+        return;
+    }
+
+    active_flow = (home_owner || homing) ? 1 : 0;
+    armed = home_req ? 1 : 0;
+
+    if (home_req) {
+        request_seen = 1;
+    } else {
+        owner_wait_cnt       = 0;
+        owner_pending        = 0;
+        request_seen         = 0;
+        owner_seen_once      = 0;
+        homing_seen_once     = 0;
+        valid_home_flow_seen = 0;
+    }
+
+    if (home_owner) {
+        owner_seen_once = 1;
+    }
+
+    if (homing) {
+        homing_seen_once = 1;
+    }
+
+    if (home_req && (home_owner || homing || mode_ok || done_lat || homed)) {
+        valid_home_flow_seen = 1;
+    }
+
+    if (home_req && !active_flow && !homed && !done_lat) {
+        owner_pending = 1;
+        owner_wait_cnt = owner_wait_cnt + 1;
+    } else {
+        owner_pending = 0;
+        owner_wait_cnt = 0;
+    }
+
+    owner_tmr = owner_wait_cnt;
+
+    no_owner_on_request =
+        (owner_pending &&
+         owner_timeout_cycles != 0 &&
+         owner_wait_cnt >= owner_timeout_cycles) ? 1 : 0;
+
+    no_mode_confirm =
+        (active_flow &&
+         !mode_ok &&
+         mode_timeout_limit != 0 &&
+         mode_tmr >= mode_timeout_limit) ? 1 : 0;
+
+    progress_timeout_seen =
+        (active_flow &&
+         prog_timeout_limit != 0 &&
+         prog_tmr >= prog_timeout_limit) ? 1 : 0;
+
+    done_timeout_seen =
+        (active_flow &&
+         done_timeout_limit != 0 &&
+         done_tmr >= done_timeout_limit) ? 1 : 0;
+
+    homing_error_latched = err_lat ? 1 : 0;
+
+    done_inconsistent =
+        ((homed || done_lat) &&
+         !(request_seen || valid_home_flow_seen || owner_seen_once || homing_seen_once)) ? 1 : 0;
+
+    if (no_owner_on_request) {
+        current_fault_code = 1;
+    } else if (no_mode_confirm) {
+        current_fault_code = 2;
+    } else if (progress_timeout_seen) {
+        current_fault_code = 3;
+    } else if (done_timeout_seen) {
+        current_fault_code = 4;
+    } else if (homing_error_latched) {
+        current_fault_code = 5;
+    } else if (done_inconsistent) {
+        current_fault_code = 6;
+    }
+
+    fault = (current_fault_code != 0) ? 1 : 0;
+    fault_code = current_fault_code;
+
+    if (fault) {
+        fault_latched = 1;
+        if (first_fault_code == 0) {
+            first_fault_code = current_fault_code;
+        }
+    }
+}

@@ -1,0 +1,33 @@
+# --- Core homing supervision block ---
+#
+# Role:
+# - define home watchdog loading, scheduling and signal wiring
+# - keep homing supervision separated from topology glue
+#
+# Current naming matches the active single-axis topology.
+
+# HOME WATCHDOG
+
+loadrt cia402_home_watchdog names=home_wd
+
+addf home_wd.update servo-thread
+
+net allow-homing          => home_wd.enable
+net home-req              => home_wd.home-req
+net ut-owner              => home_wd.home-owner
+net ut-homing             => home_wd.homing
+net ut-homed-sig        ut.homed      => home_wd.homed
+net ut-done-lat-sig     ut.done-lat   => home_wd.done-lat
+net ut-err-lat-sig      ut.err-lat    => home_wd.err-lat
+net ut-mode-ok-sig      ut.mode-ok    => home_wd.mode-ok
+net ut-state            => home_wd.state
+net ut-reason           => home_wd.reason
+net ut-mode-tmr-sig     ut.mode-tmr   => home_wd.mode-tmr
+net ut-done-tmr-sig     ut.done-tmr   => home_wd.done-tmr
+net ut-prog-tmr-sig     ut.prog-tmr   => home_wd.prog-tmr
+
+net home-watchdog-reset   => home_wd.reset
+
+net home-watchdog-fault    home_wd.fault
+net home-watchdog-latched  home_wd.fault-latched
+net home-watchdog-code     home_wd.first-fault-code

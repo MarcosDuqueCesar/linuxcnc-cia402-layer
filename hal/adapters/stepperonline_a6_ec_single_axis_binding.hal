@@ -1,0 +1,116 @@
+# hal/adapters/stepperonline_a6_ec_single_axis_binding.hal
+#
+# Stepperonline A6-EC single-axis real-binding scaffold
+#
+# STATUS
+# - derived from A6 ESI XML + A6 profile
+# - near-final LCEC-oriented binding scaffold
+# - exact runtime HAL pin names still require confirmation on the real machine
+#
+# IMPORTANT
+# - do NOT change core
+# - do NOT change topology
+# - do NOT bypass mux/cw
+# - do NOT create parallel writers
+# - do NOT guess backend pin names as validated facts
+#
+# FRAMEWORK CONTRACT
+#   adapter.in-controlword
+#   adapter.in-opmode
+#   adapter.in-target-position
+#   adapter.out-statusword
+#   adapter.out-opmode-display
+#   adapter.out-actual-position
+#
+# A6 OBJECT CONTRACT
+#   0x6040 controlword
+#   0x6060 modes of operation command
+#   0x607A target position
+#   0x6041 statusword
+#   0x6061 modes of operation display
+#   0x6064 actual position
+#
+# AXIS CONVENTION
+# - single-axis pilot = logical axis X
+# - semantic instance = adapter
+#
+# IMPORTANT
+# The names below under "EXPECTED LCEC SHAPE" are the closest practical guess
+# based on common CiA402/LCEC naming style.
+# They are NOT hardware-validated until confirmed by:
+#   halcmd show pin | grep lcec
+
+# ----------------------------------------------------------------------
+# RUNTIME REGISTRY — FILL/CONFIRM ON REAL MACHINE
+# ----------------------------------------------------------------------
+# REAL_PIN_6040 = lcec.0.<slave>.controlword
+# REAL_PIN_6060 = lcec.0.<slave>.opmode
+# REAL_PIN_607A = lcec.0.<slave>.target-position
+# REAL_PIN_6041 = lcec.0.<slave>.statusword
+# REAL_PIN_6061 = lcec.0.<slave>.opmode-display
+# REAL_PIN_6064 = lcec.0.<slave>.actual-position
+#
+# Alternate names sometimes seen:
+#   modes-of-operation
+#   modes-of-operation-display
+#   position-actual-value
+
+# ----------------------------------------------------------------------
+# DEFAULT PROJECT-SIDE SIGNALS
+# ----------------------------------------------------------------------
+newsig a6-x-controlword     u32
+newsig a6-x-opmode-cmd      s32
+newsig a6-x-target-position s32
+newsig a6-x-statusword      u32
+newsig a6-x-opmode-display  s32
+newsig a6-x-actual-position s32
+
+# ----------------------------------------------------------------------
+# SEMANTIC SIDE <-> PROJECT-SIDE TRANSPORT SURFACE
+# ----------------------------------------------------------------------
+net a6-x-controlword-cmd      adapter.in-controlword      => a6-x-controlword
+net a6-x-opmode-cmd-sig       adapter.in-opmode           => a6-x-opmode-cmd
+net a6-x-target-position-cmd  adapter.in-target-position  => a6-x-target-position
+
+net a6-x-statusword-fb        a6-x-statusword            => adapter.out-statusword
+net a6-x-opmode-display-fb    a6-x-opmode-display        => adapter.out-opmode-display
+net a6-x-actual-position-fb   a6-x-actual-position       => adapter.out-actual-position
+
+# ----------------------------------------------------------------------
+# EXPECTED LCEC SHAPE — UNCOMMENT AFTER REAL RUNTIME CONFIRMATION
+# ----------------------------------------------------------------------
+# net a6-x-controlword-rt      a6-x-controlword     => lcec.0.<slave>.controlword
+# net a6-x-opmode-cmd-rt       a6-x-opmode-cmd      => lcec.0.<slave>.opmode
+# net a6-x-target-position-rt  a6-x-target-position => lcec.0.<slave>.target-position
+#
+# net a6-x-statusword-rt       lcec.0.<slave>.statusword      => a6-x-statusword
+# net a6-x-opmode-display-rt   lcec.0.<slave>.opmode-display  => a6-x-opmode-display
+# net a6-x-actual-position-rt  lcec.0.<slave>.actual-position => a6-x-actual-position
+
+# ----------------------------------------------------------------------
+# ALTERNATE LCEC SHAPE — USE ONLY IF RUNTIME EXPORTS LONGER NAMES
+# ----------------------------------------------------------------------
+# net a6-x-controlword-rt      a6-x-controlword     => lcec.0.<slave>.controlword
+# net a6-x-opmode-cmd-rt       a6-x-opmode-cmd      => lcec.0.<slave>.modes-of-operation
+# net a6-x-target-position-rt  a6-x-target-position => lcec.0.<slave>.target-position
+#
+# net a6-x-statusword-rt       lcec.0.<slave>.statusword                 => a6-x-statusword
+# net a6-x-opmode-display-rt   lcec.0.<slave>.modes-of-operation-display => a6-x-opmode-display
+# net a6-x-actual-position-rt  lcec.0.<slave>.position-actual-value      => a6-x-actual-position
+
+# ----------------------------------------------------------------------
+# OPERATIONAL RULE
+# ----------------------------------------------------------------------
+# Keep the framework authority unchanged:
+#   cw  -> adapter.in-controlword
+#   mux -> adapter.in-opmode
+#   mux -> adapter.in-target-position
+#
+# Keep the feedback return path unchanged:
+#   adapter.out-statusword
+#   adapter.out-opmode-display
+#   adapter.out-actual-position
+#
+# No direct backend hookup to cw/mux/pds/mcsp.
+#
+# END OF FILE

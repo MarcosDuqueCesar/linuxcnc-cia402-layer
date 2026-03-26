@@ -1,0 +1,353 @@
+# --- Single-axis modular CiA402 validation harness (LinuxCNC/Axis version) ---
+#
+# Purpose of this stage:
+# - validate PDS + HOME + CSP + semantic mux + final controlword composition
+# - keep the test single-axis
+# - do NOT introduce gantry_manager yet
+#
+# Architecture:
+#
+# machine_safety_gate
+#        │
+#        ▼
+#      cia402_pds
+#        ├──────────────► cia402_homing
+#        └──────────────► cia402_motion_csp
+#                           │
+#                           ▼
+#                    cia402_axis_semantic_mux
+#                           │
+#                           ▼
+#                    cia402_cw_compose
+#                           │
+#                           ▼
+#                        cia402_stub
+#
+# Ownership rule:
+# - mux is the only final semantic writer
+# - priority is HOME > CSP
+
+loadrt machine_safety_gate      names=msg
+loadrt cia402_pds               names=pds
+loadrt cia402_homing            names=ut
+loadrt cia402_motion_csp        names=mcsp
+loadrt cia402_axis_semantic_mux names=mux
+loadrt cia402_invariant_monitor names=invmon
+loadrt cia402_cw_compose        names=cw
+loadrt cia402_backend_adapter names=adapter
+loadrt cia402_motion_watchdog names=motion_wd
+loadrt cia402_home_watchdog names=home_wd
+loadrt and2                     names=home_gate
+loadrt conv_s32_float           names=apf
+loadrt scale                    names=fb_units
+loadrt fault_injector_x         names=fault_inj_x
+
+# Recommended deterministic order:
+#   msg -> pds -> home_gate -> ut -> mcsp -> mux -> cw -> stub -> feedback conversion
+
+addf msg.update       servo-thread
+addf pds.update       servo-thread
+addf home_gate        servo-thread
+addf ut.update        servo-thread
+addf mcsp.update      servo-thread
+addf mux.update       servo-thread
+addf invmon.update    servo-thread
+addf cw.update        servo-thread
+addf adapter      servo-thread
+addf motion_wd.update servo-thread
+addf home_wd.update servo-thread
+addf fault_inj_x.update servo-thread
+addf apf              servo-thread
+addf fb_units         servo-thread
+
+# ------------------------------------------------------------------
+# --- Manual machine-policy signals
+# ------------------------------------------------------------------
+
+newsig estop-ok        bit
+newsig machine-on      bit
+newsig drives-ready    bit
+newsig home-req        bit
+newsig motion-req      bit
+newsig fault-reset-req bit
+
+net estop-ok        => msg.estop-ok
+net machine-on      => msg.machine-on
+net drives-ready    => msg.drives-ready
+net home-req        => msg.homing-req ut.home
+net motion-req      => msg.motion-req mcsp.motion-req
+net fault-reset-req => msg.fault-reset-req pds.fault-reset
+
+# ------------------------------------------------------------------
+# --- Planner -> CiA402 bridge
+# ------------------------------------------------------------------
+# Reuse the existing signal already created in opc_validation.hal:
+#   net xpos-cmd joint.0.motor-pos-cmd => stepgen.0.position-cmd
+
+net xpos-cmd        => ut.cmd mcsp.pos-cmd
+
+# ------------------------------------------------------------------
+# --- PDS <-> machine policy <-> stub
+# ------------------------------------------------------------------
+
+newsig sw-raw             u32
+net sw-raw             adapter.out-statusword => fault_inj_x.sw-in
+net sw                 fault_inj_x.sw-out     => pds.sw ut.sw
+
+net allow-enable       msg.allow-enable      => pds.allow-enable mcsp.enable
+net allow-fault-reset  msg.allow-fault-reset => pds.allow-fault-reset
+net allow-motion       msg.allow-motion      => mcsp.allow-motion
+
+net pds-cw             pds.cw-pds            => cw.cw-pds
+net pds-op-enabled     pds.op-enabled        => home_gate.in0 mcsp.op-enabled
+
+# ------------------------------------------------------------------
+# --- Homing gate path
+# ------------------------------------------------------------------
+
+net allow-homing       msg.allow-homing => home_gate.in1
+net ut-enable          home_gate.out    => ut.enable
+
+# ------------------------------------------------------------------
+# --- Backend feedback path
+# ------------------------------------------------------------------
+# ut.ap consumes raw counts
+# mcsp.pos-fb consumes machine units
+# Therefore:
+#   stub actual position (s32 counts) -> conv_s32_float -> scale 0.001 -> mcsp.pos-fb
+
+net ap                 adapter.out-actual-position => ut.ap apf.in
+net apf-out            apf.out                  => fb_units.in
+net fb-units           fb_units.out             => mcsp.pos-fb fault_inj_x.pos-fb-in
+newsig fb-wd          float
+net fb-wd             fault_inj_x.pos-fb-out  => motion_wd.pos-fb
+
+# --- Motion watchdog (Phase 1 supervision) ---
+newsig motion-watchdog-fault    bit
+newsig motion-watchdog-latched  bit
+newsig motion-watchdog-response bit
+newsig motion-watchdog-stall    bit
+newsig motion-watchdog-trackerr bit
+newsig motion-watchdog-code     u32
+newsig motion-watchdog-reset    bit
+
+net allow-motion            => motion_wd.enable
+net motion-req              => motion_wd.motion-req
+net mcsp-ready              => motion_wd.csp-ready
+net pds-op-enabled          => motion_wd.op-enabled
+net xpos-cmd                => motion_wd.pos-cmd
+net motion-watchdog-reset   => motion_wd.reset
+
+net motion-watchdog-fault    motion_wd.fault
+net motion-watchdog-latched  motion_wd.fault-latched
+net motion-watchdog-response motion_wd.response-timeout
+net motion-watchdog-stall    motion_wd.stall
+net motion-watchdog-trackerr motion_wd.tracking-error
+net motion-watchdog-code     motion_wd.first-fault-code
+
+setp motion_wd.movement-epsilon        0.0005
+setp motion_wd.tracking-error-limit    0.2500
+setp motion_wd.arm-delta-cycles        4
+setp motion_wd.response-timeout-cycles 2000
+setp motion_wd.stall-timeout-cycles    4000
+sets motion-watchdog-reset FALSE
+
+# --- Deterministic fault injection control ---
+newsig fi-inject-fault            bit
+newsig fi-inject-fault-reaction   bit
+newsig fi-inject-stall            bit
+newsig fi-inject-response-timeout bit
+newsig fi-inject-tracking         bit
+newsig fi-reset                   bit
+
+net fi-inject-fault            => fault_inj_x.inject-fault
+net fi-inject-fault-reaction   => fault_inj_x.inject-fault-reaction
+net fi-inject-stall            => fault_inj_x.inject-stall
+net fi-inject-response-timeout => fault_inj_x.inject-response-timeout
+net fi-inject-tracking         => fault_inj_x.inject-tracking
+net fi-reset                   => fault_inj_x.reset
+
+setp fault_inj_x.tracking-offset 1.0000
+sets fi-inject-fault FALSE
+sets fi-inject-fault-reaction FALSE
+sets fi-inject-stall FALSE
+sets fi-inject-response-timeout FALSE
+sets fi-inject-tracking FALSE
+sets fi-reset FALSE
+
+net omd                adapter.out-opmode-display  => ut.omd mcsp.omd
+
+# --- Home watchdog (Phase 1 supervision) ---
+newsig home-watchdog-fault    bit
+newsig home-watchdog-latched  bit
+newsig home-watchdog-code     u32
+newsig home-watchdog-reset    bit
+
+net allow-homing          => home_wd.enable
+net home-req              => home_wd.home-req
+net ut-owner              => home_wd.home-owner
+net ut-homing             => home_wd.homing
+net ut-homed-sig        ut.homed      => home_wd.homed
+net ut-done-lat-sig     ut.done-lat   => home_wd.done-lat
+net ut-err-lat-sig      ut.err-lat    => home_wd.err-lat
+net ut-mode-ok-sig      ut.mode-ok    => home_wd.mode-ok
+net ut-state            => home_wd.state
+net ut-reason           => home_wd.reason
+net ut-mode-tmr-sig     ut.mode-tmr   => home_wd.mode-tmr
+net ut-done-tmr-sig     ut.done-tmr   => home_wd.done-tmr
+net ut-prog-tmr-sig     ut.prog-tmr   => home_wd.prog-tmr
+
+net home-watchdog-reset   => home_wd.reset
+
+net home-watchdog-fault    home_wd.fault
+net home-watchdog-latched  home_wd.fault-latched
+net home-watchdog-code     home_wd.first-fault-code
+
+sets home-watchdog-reset FALSE
+
+# ------------------------------------------------------------------
+# --- Internal semantic source signals for HOME
+# ------------------------------------------------------------------
+
+newsig home-om         s32
+newsig home-tp         s32
+
+net ut-owner           ut.owner  => mux.home-active
+net mux-sel-home       mux.sel-home => invmon.sel-home
+net mux-state mux.state => invmon.mux-state
+
+net mux-reason mux.reason => invmon.mux-reason
+
+net mcsp-state mcsp.state => invmon.mcsp-state
+
+net mcsp-reason mcsp.reason => invmon.mcsp-reason
+
+net ut-state ut.state => invmon.ut-state
+
+net ut-reason ut.reason => invmon.ut-reason
+net mux-sel-csp        mux.sel-csp  => invmon.sel-csp
+net ut-owner           => invmon.home-owner
+net ut-homing          ut.homing => mux.home-homing
+
+net home-om            ut.om     => mux.home-om
+net home-tp            ut.tp     => mux.home-tp
+
+# ------------------------------------------------------------------
+# --- Internal semantic source signals for CSP
+# ------------------------------------------------------------------
+
+newsig mcsp-om         s32
+newsig mcsp-tp         s32
+
+net mcsp-owner         mcsp.owner => mux.csp-owner
+net mcsp-owner         => invmon.csp-owner
+net mcsp-ready         mcsp.ready => invmon.csp-ready
+net mcsp-om            mcsp.om    => mux.csp-om
+net mcsp-tp            mcsp.tp    => mux.csp-tp
+
+# ------------------------------------------------------------------
+# --- Final semantic writer: mux -> backend
+# ------------------------------------------------------------------
+
+newsig om              s32
+newsig tp              s32
+
+net om                 mux.om => adapter.in-opmode
+net tp                 mux.tp => adapter.in-target-position
+
+# ------------------------------------------------------------------
+# --- Controlword composition
+# ------------------------------------------------------------------
+
+net start4             ut.start-out => cw.start4
+net cw-final           cw.cw-final  => adapter.in-controlword
+
+# ------------------------------------------------------------------
+# --- PDS setup
+# ------------------------------------------------------------------
+
+setp pds.enable      TRUE
+setp pds.disable     FALSE
+setp pds.quick-stop  FALSE
+
+# ------------------------------------------------------------------
+# --- Homing setup
+# ------------------------------------------------------------------
+
+setp ut.scale  1000
+setp ut.hold   TRUE
+
+setp ut.done-m            0x1400
+setp ut.done-v            0x1400
+setp ut.err-m             0x0000
+setp ut.err-v             0x0000
+setp ut.start-pulse       1
+setp ut.done-pulse-cycles 50
+
+# ------------------------------------------------------------------
+# --- CSP setup
+# ------------------------------------------------------------------
+
+setp mcsp.scale 1000
+
+# ------------------------------------------------------------------
+# --- Stub setup
+# ------------------------------------------------------------------
+
+# setp adapter.opmode-apply-delay-cycles 20
+# setp adapter.homing-run-cycles         50
+# setp adapter.done-hold-cycles          30
+
+# ------------------------------------------------------------------
+# --- Feedback scaling back to machine units
+# ------------------------------------------------------------------
+# 1000 counts per machine unit => gain 0.001
+
+setp fb_units.gain 0.001
+
+# ------------------------------------------------------------------
+# --- Default machine-policy setup for validation
+# ------------------------------------------------------------------
+
+sets estop-ok        TRUE
+sets machine-on      TRUE
+sets drives-ready    TRUE
+sets home-req        FALSE
+sets motion-req      FALSE
+sets fault-reset-req FALSE
+
+# ------------------------------------------------------------------
+# --- Useful manual interaction points
+# ------------------------------------------------------------------
+#
+# Motion permission:
+#   sets motion-req TRUE
+#
+# Home path:
+#   sets home-req TRUE
+#   sets home-req FALSE
+#
+# Planner-driven position source:
+#   xpos-cmd (from joint.0.motor-pos-cmd)
+#
+# Diagnostics:
+#   show thread
+#   show pin msg
+#   show pin pds
+#   show pin ut
+#   show pin mcsp
+#   show pin mux
+#   show pin cw
+#   show pin stub
+#   show sig xpos-cmd
+#   show sig om
+#   show sig tp
+#   show sig home-om
+#   show sig home-tp
+#   show sig mcsp-om
+#   show sig mcsp-tp
+# ------------------------------------------------------------------
+# --- Observability minimal mapping
+# ------------------------------------------------------------------
+
+#source hal/observability_minimal.hal

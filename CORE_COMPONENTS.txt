@@ -1,0 +1,29 @@
+CORE COMPONENTS (INTERNAL — DO NOT MODIFY SEMANTICS)
+
+WATCHDOGS:
+- cia402_motion_watchdog.comp
+- cia402_home_watchdog.comp
+
+CSP:
+- cia402_csp.comp
+
+STATE / CONTROL:
+- cia402_pds.comp
+- cia402_controlword.comp
+
+MUX / ARBITRATION:
+- cia402_mux.comp
+
+OBSERVABILITY:
+- cia402_invmon.comp
+
+ADAPTER:
+- cia402_backend_adapter.comp
+
+FAULT INJECTION:
+- cia402_fault_injector.comp
+
+RULES:
+- semantics are frozen
+- do not modify without updating PROJECT_CONTEXT
+- all external integration happens via HAL + profile

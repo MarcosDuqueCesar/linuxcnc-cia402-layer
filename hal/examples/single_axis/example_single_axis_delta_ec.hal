@@ -1,0 +1,20 @@
+# hal/examples/single_axis/example_single_axis_delta_ec.hal
+#
+# Single-axis pilot wrapper for Delta EtherCAT binding.
+#
+# PURPOSE
+# - keep validated CiA402 semantic core unchanged
+# - keep validated single-axis topology unchanged
+# - introduce Delta profile at wrapper level
+# - include Delta binding scaffold
+#
+# IMPORTANT
+# - do NOT load core here (topology already does)
+# - do NOT create backend here
+# - do NOT rewire pipeline here
+
+source hal/topology/single_axis/single_axis_base.hal
+
+# Delta single-axis binding scaffold
+source hal/adapters/delta_ec_single_axis_binding.hal
+

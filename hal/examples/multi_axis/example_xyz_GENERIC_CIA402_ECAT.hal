@@ -1,0 +1,41 @@
+# hal/examples/multi_axis/example_xyz_GENERIC_CIA402_ECAT.hal
+#
+# XYZ experimental wrapper for generic CiA402 EtherCAT profiles.
+#
+# IMPORTANT
+# - keep this wrapper thin
+# - do not duplicate core loading here
+# - do not duplicate topology logic here
+# - experimental scaffold only
+# - not runtime validated as a generic hardware recipe
+#
+# PROFILE
+# - GENERIC_CIA402_ECAT_XYZ_EXPERIMENTAL
+#
+# ROLE
+# - binds the validated multi-axis semantic topology to a generic
+#   three-axis EtherCAT/CiA402 backend binding scaffold
+#
+# NOTE
+# - each axis must map to a distinct backend slave or distinct backend instance
+# - real hardware binding occurs in:
+#   hal/adapters/generic_cia402_xyz_binding.hal
+# - this file must remain transport-agnostic
+
+# ----------------------------------------------------------------------
+# ACTIVE MULTI-AXIS TOPOLOGY
+# ----------------------------------------------------------------------
+# Replace the topology source below only if the workspace uses a different
+# validated multi-axis base file.
+#
+# Expected semantic-side adapter instances:
+#   adapter_x
+#   adapter_y
+#   adapter_z
+
+source hal/topology/multi_axis/multi_axis_base.hal
+
+# ----------------------------------------------------------------------
+# GENERIC XYZ BINDING SCAFFOLD
+# ----------------------------------------------------------------------
+source hal/adapters/generic_cia402_xyz_binding.hal

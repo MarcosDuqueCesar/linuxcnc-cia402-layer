@@ -1,0 +1,19 @@
+# hal/examples/single_axis/example_single_axis_omron_ec.hal
+#
+# Single-axis pilot wrapper for Omron EtherCAT binding.
+#
+# PURPOSE
+# - keep validated CiA402 semantic core unchanged
+# - keep validated single-axis topology unchanged
+# - introduce Omron profile at wrapper level
+# - include Omron binding scaffold
+#
+# IMPORTANT
+# - do NOT load core here (topology already does)
+# - do NOT create backend here
+# - do NOT rewire pipeline here
+
+source hal/topology/single_axis/single_axis_base.hal
+
+# Omron single-axis binding scaffold
+source hal/adapters/omron_ec_single_axis_binding.hal

@@ -1,0 +1,154 @@
+component cia402_motion_watchdog "Minimal CSP motion watchdog (stall + response timeout + tracking error)";
+
+pin in bit   enable               "Supervision enabled";
+pin in bit   motion_req           "Semantic motion request";
+pin in bit   csp_ready            "CSP ready/active";
+pin in bit   op_enabled           "Drive operation enabled";
+pin in float pos_cmd              "Commanded position in machine units";
+pin in float pos_fb               "Feedback position in machine units";
+pin in bit   reset                "Manual reset for latched diagnostics";
+
+param rw float movement_epsilon        = 0.0005 "Minimum feedback delta considered as movement";
+param rw float tracking_error_limit    = 0.2500 "Absolute tracking error limit in machine units";
+param rw u32   response_timeout_cycles = 2000   "Max cycles waiting for first feedback movement after motion request becomes executable";
+param rw u32   stall_timeout_cycles    = 4000   "Max cycles with no feedback movement while motion remains executable";
+param rw u32   arm_delta_cycles        = 4      "Consecutive cycles with nonzero cmd-fb error before arming response timeout";
+
+pin out bit  armed                "Watchdog is supervising executable motion";
+pin out bit  response_pending     "Waiting for first observed motion after executable request";
+pin out bit  moving_seen          "At least one feedback movement observed in current armed window";
+pin out bit  response_timeout     "Timed out waiting for first movement";
+pin out bit  stall                "Feedback stopped changing for too long while executable motion persists";
+pin out bit  tracking_error       "Absolute tracking error exceeded limit";
+pin out bit  fault                "Aggregate watchdog fault";
+pin out bit  fault_latched        "Latched aggregate watchdog fault";
+pin out u32  fault_code           "Current fault code: 0 none, 1 response timeout, 2 stall, 3 tracking error";
+pin out u32  first_fault_code     "First latched fault code";
+pin out u32  response_tmr         "Cycles elapsed in response-pending state";
+pin out u32  stall_tmr            "Cycles elapsed with no observed movement";
+pin out float tracking_error_abs  "Absolute |pos_cmd-pos_fb|";
+pin out float fb_delta_abs        "Absolute feedback delta per cycle";
+
+variable float last_fb;
+variable int arm_delta_count;
+
+function update;
+license "MIT";
+
+;;
+
+#include <math.h>
+
+FUNCTION(update)
+{
+    float fb_delta;
+    int executable;
+    int moved;
+    int cmd_demands_motion;
+    int current_fault_code = 0;
+
+    if (reset) {
+        response_timeout = 0;
+        stall = 0;
+        tracking_error = 0;
+        fault = 0;
+        fault_latched = 0;
+        fault_code = 0;
+        first_fault_code = 0;
+        response_tmr = 0;
+        stall_tmr = 0;
+        armed = 0;
+        response_pending = 0;
+        moving_seen = 0;
+        tracking_error_abs = 0.0f;
+        fb_delta_abs = 0.0f;
+        arm_delta_count = 0;
+        last_fb = pos_fb;
+        return;
+    }
+
+    fb_delta = pos_fb - last_fb;
+    fb_delta_abs = (float)fabs((double)fb_delta);
+    tracking_error_abs = (float)fabs((double)(pos_cmd - pos_fb));
+
+    executable = (enable && motion_req && csp_ready && op_enabled) ? 1 : 0;
+    moved = (fb_delta_abs >= movement_epsilon) ? 1 : 0;
+    cmd_demands_motion = (tracking_error_abs >= movement_epsilon) ? 1 : 0;
+
+    if (!executable) {
+        armed = 0;
+        response_pending = 0;
+        moving_seen = 0;
+        response_tmr = 0;
+        stall_tmr = 0;
+        response_timeout = 0;
+        stall = 0;
+        tracking_error = 0;
+        fault = 0;
+        fault_code = 0;
+        arm_delta_count = 0;
+        last_fb = pos_fb;
+        return;
+    }
+
+    armed = 1;
+
+    if (cmd_demands_motion) {
+        if (arm_delta_count < arm_delta_cycles) {
+            arm_delta_count = arm_delta_count + 1;
+        }
+    } else {
+        arm_delta_count = 0;
+    }
+
+    response_pending = (!moving_seen && (arm_delta_count >= arm_delta_cycles)) ? 1 : 0;
+
+    if (response_pending) {
+        response_tmr = response_tmr + 1;
+        if (moved) {
+            moving_seen = 1;
+            response_pending = 0;
+            response_tmr = 0;
+            stall_tmr = 0;
+        }
+    } else {
+        response_tmr = 0;
+        if (moved) {
+            moving_seen = 1;
+        }
+    }
+
+    if (moving_seen && cmd_demands_motion) {
+        if (moved) {
+            stall_tmr = 0;
+        } else {
+            stall_tmr = stall_tmr + 1;
+        }
+    } else {
+        stall_tmr = 0;
+    }
+
+    response_timeout = (response_pending && response_tmr >= response_timeout_cycles) ? 1 : 0;
+    stall = (moving_seen && cmd_demands_motion && stall_tmr >= stall_timeout_cycles) ? 1 : 0;
+    tracking_error = (tracking_error_abs >= tracking_error_limit) ? 1 : 0;
+
+    if (response_timeout) {
+        current_fault_code = 1;
+    } else if (stall) {
+        current_fault_code = 2;
+    } else if (tracking_error) {
+        current_fault_code = 3;
+    }
+
+    fault = (current_fault_code != 0) ? 1 : 0;
+    fault_code = current_fault_code;
+
+    if (fault) {
+        fault_latched = 1;
+        if (first_fault_code == 0) {
+            first_fault_code = current_fault_code;
+        }
+    }
+
+    last_fb = pos_fb;
+}

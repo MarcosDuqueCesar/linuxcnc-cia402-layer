@@ -1,0 +1,4 @@
+# --- Quick-stop policy (multi-axis XY, PDS-integrated) ---
+
+setp pds_x.quick-stop FALSE
+setp pds_y.quick-stop FALSE

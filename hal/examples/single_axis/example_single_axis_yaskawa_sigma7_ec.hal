@@ -1,0 +1,23 @@
+# hal/examples/single_axis/example_single_axis_yaskawa_sigma7_ec.hal
+#
+# Single-axis pilot wrapper for Yaskawa Sigma-7 EtherCAT.
+#
+# IMPORTANT
+# - keep this wrapper thin
+# - do not duplicate core loading here
+# - do not duplicate topology logic here
+# - the active integration point remains the validated single-axis topology
+#
+# PROFILE
+# - yaskawa_sigma7_ec (CiA402 EtherCAT)
+#
+# ROLE
+# - binds the validated semantic pipeline to the Sigma-7 backend binding layer
+#
+# NOTE
+# - real hardware binding occurs in:
+#   hal/adapters/yaskawa_sigma7_ec_single_axis_binding.hal
+# - this file must remain transport-agnostic
+
+source hal/topology/single_axis/single_axis_base.hal
+source hal/adapters/yaskawa_sigma7_ec_single_axis_binding.hal

@@ -1,0 +1,31 @@
+OFFICIAL ENTRYPOINT:
+
+INI:
+- opc_validation.ini
+
+HAL:
+- opc_validation.hal
+- custom.hal
+- hal/stub_test_modular_axis_csp_lcnc_multi_xy.hal
+- postgui_call_list.hal
+
+DRIVER PROFILE:
+- profiles/driver_profile.schema.yaml
+- profiles/stub_multi_xy.profile.yaml
+
+RUNNER:
+- scripts/run_tests.sh
+- scripts/validate_driver_profile.sh
+
+CONTROL / DIAGNOSTIC:
+- scripts/single_axis_ctl.sh
+- scripts/diag_single_axis.sh
+
+FAULT INJECTION (OFFICIAL):
+- scripts/faultinj_test_response_timeout_x.sh
+- scripts/faultinj_test_response_timeout_y.sh
+- scripts/faultinj_test_stall_x.sh
+- scripts/faultinj_test_stall_y.sh
+- scripts/faultinj_test_tracking_x.sh
+- scripts/faultinj_test_tracking_y.sh
+- scripts/faultinj_clear_state_multi.sh

@@ -1,0 +1,5 @@
+# Compatibility shim.
+# Canonical path after V0.9.8.25 distribution split:
+#   profiles/validated/stub_multi_xy.profile.yaml
+#
+# Keep this file only as a transitional pointer for local workspaces.

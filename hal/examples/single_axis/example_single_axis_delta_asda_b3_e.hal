@@ -1,0 +1,23 @@
+# hal/examples/single_axis/example_single_axis_delta_asda_b3_e.hal
+#
+# Single-axis pilot wrapper for Delta ASDA-B3 EtherCAT.
+#
+# IMPORTANT
+# - keep this wrapper thin
+# - do not duplicate core loading here
+# - do not duplicate topology logic here
+# - the active integration point remains the validated single-axis topology
+#
+# PROFILE
+# - delta_asda_b3_e (CiA402 EtherCAT)
+#
+# ROLE
+# - binds the validated semantic pipeline to the Delta ASDA-B3 backend binding layer
+#
+# NOTE
+# - real hardware binding occurs in:
+#   hal/adapters/delta_asda_b3_e_single_axis_binding.hal
+# - this file must remain transport-agnostic
+
+source hal/topology/single_axis/single_axis_base.hal
+source hal/adapters/delta_asda_b3_e_single_axis_binding.hal

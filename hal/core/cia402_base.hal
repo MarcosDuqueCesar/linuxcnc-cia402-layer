@@ -1,0 +1,53 @@
+# --- Core CiA402 semantic base block ---
+#
+# Role:
+# - load and schedule the reusable semantic core components
+# - provide the base PDS/HOMING/CSP/MUX/CW/backend contract pipeline
+#
+# IMPORTANT
+# - This file remains topology-agnostic at the semantic level.
+# - The active single-axis topology still consumes the backend instance
+#   named "adapter" through the validated 6-signal contract:
+#     in-controlword
+#     in-opmode
+#     in-target-position
+#     out-statusword
+#     out-opmode-display
+#     out-actual-position
+#
+# CURRENT PHASE
+# - The project is in transition from virtual backend to real HAL binding.
+# - Until a real backend is materialized and wired with evidence, the
+#   backend contract instance must remain present here as "adapter".
+# - Do not remove or rename "adapter" yet, because the active topology
+#   still binds directly to adapter.in-* / adapter.out-*.
+#
+# NEXT STRUCTURAL STEP (NOT DONE HERE)
+# - When the real backend is actually materialized, this file is one of the
+#   two legitimate substitution points:
+#     1) backend load here
+#     2) backend signal binding in topology/single_axis/single_axis_base.hal
+
+# CORE BASE (SEMANTICS)
+
+loadrt machine_safety_gate      names=msg
+loadrt cia402_pds               names=pds
+loadrt cia402_homing            names=ut
+loadrt cia402_motion_csp        names=mcsp
+loadrt cia402_axis_semantic_mux names=mux
+loadrt cia402_invariant_monitor names=invmon
+loadrt cia402_cw_compose        names=cw
+
+# Backend contract provider (current virtual implementation).
+# Keep instance name "adapter" stable until the real backend replaces the
+# same contract with real pins and validated signal names.
+loadrt cia402_backend_adapter   names=adapter
+
+addf msg.update       servo-thread
+addf pds.update       servo-thread
+addf ut.update        servo-thread
+addf mcsp.update      servo-thread
+addf mux.update       servo-thread
+addf invmon.update    servo-thread
+addf cw.update        servo-thread
+addf adapter          servo-thread

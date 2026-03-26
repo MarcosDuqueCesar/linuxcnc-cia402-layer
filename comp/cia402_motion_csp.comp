@@ -1,0 +1,206 @@
+// === INVARIANT CONTRACT (V0.9.8.14) ===
+// owner may be TRUE while ready is FALSE
+// WAIT_MODE_CSP is valid ownership state
+// readiness is only guaranteed in ACTIVE state
+// ======================================
+
+component cia402_motion_csp "CiA402 CSP motion semantic layer";
+
+pin in bit   enable          "Enable component";
+pin in bit   motion_req      "Request normal motion";
+pin in bit   allow_motion    "Machine policy allows motion";
+
+pin in float pos_cmd         "Position command from upper layer";
+pin in float pos_fb          "Position feedback";
+
+pin in s32   omd             "Operation mode display (6061)";
+pin in bit   op_enabled      "Drive is in Operation Enabled";
+
+pin in float scale = 1.0     "Scale from machine units to drive units";
+
+pin out s32   om             "Operation mode command (6060)";
+pin out s32   tp             "Target position";
+
+pin out bit   owner          "CSP semantic owner (asserted in WAIT_MODE_CSP and ACTIVE)";
+pin out bit   mode_ok        "Mode confirmed (CSP)";
+pin out bit   active         "Motion active";
+pin out bit   ready          "Ready for motion";
+
+pin out s32   state          "FSM state";
+pin out s32   reason         "State reason";
+
+variable float last_fb;
+
+function update;
+
+license "GPL";
+
+;;
+
+#define STATE_IDLE            0
+#define STATE_WAIT_MODE_CSP   10
+#define STATE_ACTIVE          11
+#define STATE_ERROR           15
+
+#define REASON_IDLE           0
+#define REASON_WAIT_MODE      10
+#define REASON_ACTIVE         11
+
+#define REASON_DISABLED       20
+#define REASON_NO_REQ         21
+#define REASON_NOT_ALLOWED    22
+#define REASON_NOT_OP_ENABLED 23
+#define REASON_MODE_NOT_OK    24
+#define REASON_MODE_LOST      25
+#define REASON_OP_LOST        26
+#define REASON_INTERNAL       27
+
+FUNCTION(update)
+{
+    last_fb = pos_fb;
+
+    mode_ok = (omd == 8);
+
+    if(!enable) {
+        state = STATE_IDLE;
+        reason = REASON_DISABLED;
+    }
+    else if(!motion_req) {
+        state = STATE_IDLE;
+        reason = REASON_NO_REQ;
+    }
+    else if(!allow_motion) {
+        state = STATE_IDLE;
+        reason = REASON_NOT_ALLOWED;
+    }
+    else {
+
+        switch(state) {
+
+        case STATE_IDLE:
+
+            om = 0;
+            tp = (int32_t)(last_fb * scale);
+            owner = 0;
+            active = 0;
+            ready = 0;
+
+            if(enable && motion_req && allow_motion) {
+                state = STATE_WAIT_MODE_CSP;
+                reason = REASON_WAIT_MODE;
+            }
+
+        break;
+
+// INVARIANT: ownership valid before readiness (do NOT couple)
+        case STATE_WAIT_MODE_CSP:
+
+            /*
+             * Bootstrap phase:
+             * CSP already owns the semantic channel here, even though
+             * motion is not yet active. This allows the mux to forward
+             * om=8 so the backend can acknowledge omd=8 and the FSM can
+             * then transition to ACTIVE.
+             */
+            om = 8;
+            tp = (int32_t)(last_fb * scale);
+            owner = 1;
+            active = 0;
+            ready = 0;
+
+            if(!op_enabled) {
+                reason = REASON_NOT_OP_ENABLED;
+                break;
+            }
+
+            if(omd == 8 && op_enabled) {
+                state = STATE_ACTIVE;
+                reason = REASON_ACTIVE;
+            }
+            else {
+                reason = REASON_WAIT_MODE;
+            }
+
+        break;
+
+// INVARIANT: readiness only guaranteed in ACTIVE state
+        case STATE_ACTIVE:
+
+            om = 8;
+            tp = (int32_t)(pos_cmd * scale);
+            owner = 1;
+            active = 1;
+            ready = 1;
+
+            if(!enable) {
+                state = STATE_IDLE;
+                reason = REASON_DISABLED;
+                break;
+            }
+
+            if(!motion_req) {
+                state = STATE_IDLE;
+                reason = REASON_NO_REQ;
+                break;
+            }
+
+            if(!allow_motion) {
+                state = STATE_IDLE;
+                reason = REASON_NOT_ALLOWED;
+                break;
+            }
+
+            if(!op_enabled) {
+                state = STATE_WAIT_MODE_CSP;
+                reason = REASON_OP_LOST;
+                break;
+            }
+
+            if(omd != 8) {
+                state = STATE_WAIT_MODE_CSP;
+                reason = REASON_MODE_LOST;
+                break;
+            }
+
+        break;
+
+        default:
+
+            state = STATE_ERROR;
+            reason = REASON_INTERNAL;
+            om = 0;
+            tp = (int32_t)(last_fb * scale);
+            owner = 0;
+            active = 0;
+            ready = 0;
+
+        break;
+
+        }
+
+    }
+
+    if(state == STATE_IDLE) {
+        om = 0;
+        tp = (int32_t)(last_fb * scale);
+        owner = 0;
+        active = 0;
+        ready = 0;
+    }
+
+    if(state == STATE_WAIT_MODE_CSP) {
+        om = 8;
+        tp = (int32_t)(last_fb * scale);
+        owner = 1;
+        active = 0;
+        ready = 0;
+    }
+
+    if(state == STATE_ACTIVE) {
+        om = 8;
+        tp = (int32_t)(pos_cmd * scale);
+        owner = 1;
+        active = 1;
+        ready = 1;
+    }
+}

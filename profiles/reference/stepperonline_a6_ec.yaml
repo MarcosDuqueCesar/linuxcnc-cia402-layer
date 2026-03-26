@@ -1,0 +1,91 @@
+profile:
+  name: stepperonline_a6_ec
+  vendor: stepperonline
+  model: A6-EC
+  type: cia402
+  classification: reference
+  source: manual_based
+
+identity:
+  vendor_id: 0x00400000
+  product_code: 0x00000715
+  revision: 0x00002EF8
+
+modes:
+  drive_supported:
+    - CSP
+    - CSV
+    - CST
+    - PP
+    - PV
+    - PT
+    - HM
+
+  framework_supported:
+    - CSP
+    - HM
+
+objects:
+  controlword: 0x6040
+  statusword: 0x6041
+  modes_of_operation: 0x6060
+  modes_of_operation_display: 0x6061
+  target_position: 0x607A
+  actual_position: 0x6064
+
+csp:
+  required:
+    - controlword
+    - statusword
+    - target_position
+    - actual_position
+
+homing:
+  supported: true
+  execution: internal_drive
+  supervision: framework
+  constraints:
+    - mode_must_be_validated
+    - start_must_be_confirmed
+    - progress_must_be_observable
+    - timeout_must_be_handled
+    - fault_must_be_latched
+    - command_feedback_must_be_resynchronized
+  note: >
+    Internal HM is allowed when supported by the drive, but the framework
+    remains responsible for state validation, ownership, progress detection,
+    timeout handling, fault latching, and command/feedback resynchronization.
+
+quick_stop:
+  supported: true
+  trigger:
+    controlword_bit: 2
+  objects:
+    option_code: 0x605A
+    deceleration: 0x6085
+  supervision: framework
+  constraints:
+    - stop_must_be_observable
+    - deceleration_must_occur
+    - failure_to_stop_is_fault
+    - event_must_be_latched
+  note: >
+    Quick stop is initiated through CiA402 controlword handling, but the
+    framework remains responsible for validating physical stop behavior and
+    latching the event.
+
+semantics:
+  follows_cia402_state_machine: true
+  response_timeout_is_event_with_persistent_latch: true
+
+timeouts:
+  mailbox_response_ms: 2000
+  preop_ms: 3000
+  safeop_to_op_ms: 9000
+
+notes:
+  - "Derived from A6-EC manual and ESI XML"
+  - "Drive-supported modes are broader than framework-supported modes"
+  - "Framework currently supports CSP and HM operationally"
+  - "Quick stop is treated as a supervised event, not as an operation mode"
+  - "Classification remains reference until hardware validation"

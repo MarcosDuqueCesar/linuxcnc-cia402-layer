@@ -1,0 +1,6 @@
+# --- Motion watchdog (multi-axis XY) ---
+
+loadrt cia402_motion_watchdog names=motion_wd_x,motion_wd_y
+
+addf motion_wd_x.update servo-thread
+addf motion_wd_y.update servo-thread

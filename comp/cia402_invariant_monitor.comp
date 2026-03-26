@@ -1,0 +1,100 @@
+component cia402_invariant_monitor "Invariant monitor with latch and snapshot";
+
+pin in bit sel_home;
+pin in bit sel_csp;
+
+pin in bit csp_owner;
+pin in bit csp_ready;
+
+pin in bit home_owner;
+
+pin in bit reset;
+
+/* Snapshot inputs */
+pin in s32 mux_state;
+pin in s32 mux_reason;
+pin in s32 mcsp_state;
+pin in s32 mcsp_reason;
+pin in s32 ut_state;
+pin in s32 ut_reason;
+
+/* Instant errors */
+pin out bit err_mux_conflict;
+pin out bit err_csp_without_owner;
+pin out bit err_home_without_owner;
+pin out bit err_ready_without_owner;
+
+/* Latched diagnostics */
+pin out bit err_latched;
+pin out u32 err_count;
+pin out u32 first_error_code;
+
+/* Snapshot outputs */
+pin out s32 snap_mux_state;
+pin out s32 snap_mux_reason;
+pin out s32 snap_mcsp_state;
+pin out s32 snap_mcsp_reason;
+pin out s32 snap_ut_state;
+pin out s32 snap_ut_reason;
+
+function update;
+license "MIT";
+
+;;
+
+FUNCTION(update)
+{
+    int current_error = 0;
+    int current_code = 0;
+
+    err_mux_conflict        = sel_home && sel_csp;
+    err_csp_without_owner   = sel_csp && !csp_owner;
+    err_home_without_owner  = sel_home && !home_owner;
+    err_ready_without_owner = csp_ready && !csp_owner;
+
+    if (reset) {
+        err_latched = 0;
+        err_count = 0;
+        first_error_code = 0;
+
+        snap_mux_state = 0;
+        snap_mux_reason = 0;
+        snap_mcsp_state = 0;
+        snap_mcsp_reason = 0;
+        snap_ut_state = 0;
+        snap_ut_reason = 0;
+    }
+
+    if (err_mux_conflict) {
+        current_error = 1;
+        current_code = 1;
+    } else if (err_csp_without_owner) {
+        current_error = 1;
+        current_code = 2;
+    } else if (err_home_without_owner) {
+        current_error = 1;
+        current_code = 3;
+    } else if (err_ready_without_owner) {
+        current_error = 1;
+        current_code = 4;
+    }
+
+    if (current_error) {
+        err_count = err_count + 1;
+        err_latched = 1;
+
+        if (first_error_code == 0) {
+            first_error_code = current_code;
+
+            /* SNAPSHOT ONLY ON FIRST ERROR */
+            snap_mux_state = mux_state;
+            snap_mux_reason = mux_reason;
+
+            snap_mcsp_state = mcsp_state;
+            snap_mcsp_reason = mcsp_reason;
+
+            snap_ut_state = ut_state;
+            snap_ut_reason = ut_reason;
+        }
+    }
+}

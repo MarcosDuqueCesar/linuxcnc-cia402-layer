@@ -1,3 +1,9 @@
+// === INVARIANT CONTRACT (V0.9.8.14) ===
+// HOME ownership persists independently of Axis STOP
+// fault removes execution capability, not semantic intent
+// reset restores execution without redefining intent
+// ======================================
+
 component cia402_homing "CiA402 homing UT adapter (short names to satisfy HAL limits)";
 
 pin in  bit   home;      // Execute request
@@ -43,10 +49,30 @@ pin out bit   start_out;
 pin out bit   done_lat;
 pin out bit   err_lat;
 pin out bit   mode_ok;
+pin out bit   owner;
 
 pin out u32   mode_tmr;
 pin out u32   done_tmr;
 pin out u32   prog_tmr;
+
+/* Per-instance runtime state */
+variable hal_bit_t  homed_old;
+variable hal_u32_t  start_cnt;
+variable hal_bit_t  exec_prev;
+variable hal_bit_t  start_sent;
+variable hal_bit_t  done_latched;
+variable hal_bit_t  err_latched;
+variable hal_u32_t  done_p_cnt;
+
+variable hal_u32_t  wait_mode_cnt;
+variable hal_u32_t  wait_done_cnt;
+variable hal_u32_t  progress_cnt;
+variable hal_u32_t  omd_ok_cnt;
+
+variable hal_s32_t  last_ap;
+variable hal_u32_t  last_sw;
+variable hal_s32_t  last_omd;
+variable hal_bit_t  progress_init;
 
 function update;
 license "MIT";
@@ -72,6 +98,7 @@ enum {
     H_R_DONE                      = 13,
 
     H_R_ERROR_STATUS_MATCH        = 20,
+// NOTE: execution drop != intent removal (intent persists upstream)
     H_R_ERROR_EXEC_DROPPED        = 21,
     H_R_ERROR_INVALID_STATE       = 22,
     H_R_ERROR_MODE_TIMEOUT        = 23,
@@ -80,30 +107,12 @@ enum {
     H_R_ERROR_MODE_LOST           = 26
 };
 
-static int      homed_old;
-static uint32_t start_cnt;
-static int      exec_prev;
-static int      start_sent;
-static int      done_latched;
-static int      err_latched;
-static uint32_t done_p_cnt;
-
-static uint32_t wait_mode_cnt;
-static uint32_t wait_done_cnt;
-static uint32_t progress_cnt;
-static uint32_t omd_ok_cnt;
-
-static int32_t  last_ap;
-static uint32_t last_sw;
-static int32_t  last_omd;
-static int      progress_init;
-
 static inline int bit_is_set_u32(uint32_t v, int bit)
 {
     return (v >> bit) & 1u;
 }
 
-static void reset_runtime_state(void)
+static void reset_runtime_state(struct __comp_state *__comp_inst)
 {
     start_cnt      = 0;
     start_sent     = 0;
@@ -119,7 +128,10 @@ static void reset_runtime_state(void)
     progress_init  = 0;
 }
 
-static void reset_progress_watch(int32_t ap_now, uint32_t sw_now, int32_t omd_now)
+static void reset_progress_watch(struct __comp_state *__comp_inst,
+                                 int32_t ap_now,
+                                 uint32_t sw_now,
+                                 int32_t omd_now)
 {
     progress_cnt  = 0;
     last_ap       = ap_now;
@@ -142,6 +154,7 @@ FUNCTION(update)
     exec_fall = 0;
     start_out = 0;
     mode_ok   = 0;
+    owner     = 0;
 
     if (hold && exec) {
         tp = ap;
@@ -157,13 +170,13 @@ FUNCTION(update)
     {
         int exec_rise_local = (exec && !exec_prev);
         int exec_fall_local = (!exec && exec_prev);
-        exec_prev = exec;
+        exec_prev = exec ? 1 : 0;
 
         exec_rise = exec_rise_local ? 1 : 0;
         exec_fall = exec_fall_local ? 1 : 0;
 
         if (exec_fall_local) {
-            reset_runtime_state();
+            reset_runtime_state(__comp_inst);
 
             err_latched = 1;
             homed       = 0;
@@ -172,17 +185,19 @@ FUNCTION(update)
             done_lat    = 0;
             err_lat     = 1;
             mode_ok     = 0;
+            owner       = 0;
             mode_tmr    = 0;
             done_tmr    = 0;
             prog_tmr    = 0;
 
             state       = H_S_ERROR;
+// NOTE: execution drop != intent removal (intent persists upstream)
             reason      = H_R_ERROR_EXEC_DROPPED;
             return;
         }
 
         if (!exec) {
-            reset_runtime_state();
+            reset_runtime_state(__comp_inst);
 
             homed       = 0;
             homing      = 0;
@@ -190,6 +205,7 @@ FUNCTION(update)
             done_lat    = 0;
             err_lat     = 0;
             mode_ok     = 0;
+            owner       = 0;
             mode_tmr    = 0;
             done_tmr    = 0;
             prog_tmr    = 0;
@@ -200,7 +216,7 @@ FUNCTION(update)
         }
 
         if (exec_rise_local) {
-            reset_runtime_state();
+            reset_runtime_state(__comp_inst);
             state  = H_S_WAIT_OMD6;
             reason = H_R_WAITING_MODE_DISPLAY;
         }
@@ -234,9 +250,9 @@ FUNCTION(update)
 
             if (omd == 6) {
                 omd_ok_cnt++;
-                if (omd_ok_cnt >= ((mode_confirm_cycles == 0) ? 1 : mode_confirm_cycles)) {
+                if (omd_ok_cnt >= ((mode_confirm_cycles == 0) ? 1u : mode_confirm_cycles)) {
                     mode_ok = 1;
-                    reset_progress_watch(ap, sw, omd);
+                    reset_progress_watch(__comp_inst, ap, sw, omd);
                     state = H_S_SEND_START;
                 }
             } else {
@@ -276,7 +292,7 @@ FUNCTION(update)
             }
 
             if (start_sent) {
-                reset_progress_watch(ap, sw, omd);
+                reset_progress_watch(__comp_inst, ap, sw, omd);
                 state = H_S_WAIT_DONE;
             }
             break;
@@ -299,12 +315,21 @@ FUNCTION(update)
                 break;
             }
 
+            /* DONE has final precedence once detected */
+            if (!done_latched && start_sent && done_match && !err_match) {
+                done_latched = 1;
+                err_latched  = 0;
+                state        = H_S_DONE;
+                reason       = H_R_DONE;
+                break;
+            }
+
             if (!progress_init) {
-                reset_progress_watch(ap, sw, omd);
+                reset_progress_watch(__comp_inst, ap, sw, omd);
             } else {
                 if (ap != last_ap || sw != last_sw || omd != last_omd) {
-                    reset_progress_watch(ap, sw, omd);
-                } else if (progress_timeout_cycles != 0) {
+                    reset_progress_watch(__comp_inst, ap, sw, omd);
+                } else if (!done_latched && progress_timeout_cycles != 0) {
                     progress_cnt++;
                     if (progress_cnt >= progress_timeout_cycles) {
                         state       = H_S_ERROR;
@@ -315,7 +340,7 @@ FUNCTION(update)
                 }
             }
 
-            if (done_timeout_cycles != 0) {
+            if (!done_latched && done_timeout_cycles != 0) {
                 wait_done_cnt++;
                 if (wait_done_cnt >= done_timeout_cycles) {
                     state       = H_S_ERROR;
@@ -325,22 +350,21 @@ FUNCTION(update)
                 }
             }
 
-            if (!done_latched && start_sent && done_match && !err_match) {
-                done_latched = 1;
-                state = H_S_DONE;
-            }
             break;
 
         case H_S_DONE:
             reason  = H_R_DONE;
             mode_ok = (omd == 6) ? 1 : 0;
+            err_latched = 0;
             break;
 
         case H_S_ERROR:
+            done_latched = 0;
             if (!err_latched) {
                 err_latched = 1;
             }
             if (reason != H_R_ERROR_STATUS_MATCH &&
+// NOTE: execution drop != intent removal (intent persists upstream)
                 reason != H_R_ERROR_EXEC_DROPPED &&
                 reason != H_R_ERROR_INVALID_STATE &&
                 reason != H_R_ERROR_MODE_TIMEOUT &&
@@ -352,6 +376,7 @@ FUNCTION(update)
             break;
 
         default:
+            done_latched = 0;
             state  = H_S_ERROR;
             err_latched = 1;
             reason = H_R_ERROR_INVALID_STATE;
@@ -359,8 +384,10 @@ FUNCTION(update)
         }
     }
 
-    homed  = (done_latched && !err_latched);
-    homing = (exec && !done_latched && !err_latched);
+    homed  = (done_latched && !err_latched) ? 1 : 0;
+    homing = (exec && !done_latched && !err_latched) ? 1 : 0;
+
+    owner = ((state != H_S_IDLE) && (state != H_S_ERROR)) ? 1 : 0;
 
     done_lat = done_latched ? 1 : 0;
     err_lat  = err_latched ? 1 : 0;
@@ -382,5 +409,5 @@ FUNCTION(update)
         done_p = 0;
     }
 
-    homed_old = homed;
+    homed_old = homed ? 1 : 0;
 }

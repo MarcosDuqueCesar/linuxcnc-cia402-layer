@@ -1,0 +1,255 @@
+# hal/adapters/generic_cia402_xyz_binding.hal
+#
+# Generic CiA402 EtherCAT XYZ experimental binding scaffold
+#
+# STATUS
+# - generic multi-axis scaffold
+# - intended to prevent ad-hoc mixed wiring by third parties
+# - experimental
+# - not runtime validated as a generic drop-in recipe
+#
+# IMPORTANT
+# - do NOT change core
+# - do NOT change topology
+# - do NOT bypass mux/cw
+# - do NOT create parallel writers
+# - do NOT mix axis ownership
+# - do NOT guess backend pin names as validated facts
+#
+# FRAMEWORK CONTRACT PER AXIS
+#   adapter_<axis>.in-controlword
+#   adapter_<axis>.in-opmode
+#   adapter_<axis>.in-target-position
+#   adapter_<axis>.out-statusword
+#   adapter_<axis>.out-opmode-display
+#   adapter_<axis>.out-actual-position
+#
+# GENERIC CIA402 OBJECT CONTRACT PER AXIS
+#   0x6040 controlword
+#   0x6060 modes of operation command
+#   0x607A target position
+#   0x6041 statusword
+#   0x6061 modes of operation display
+#   0x6064 actual position
+#
+# AXIS CONVENTION
+# - X semantic instance = adapter_x
+# - Y semantic instance = adapter_y
+# - Z semantic instance = adapter_z
+#
+# TRANSPORT ASSUMPTION
+# - EtherCAT / LCEC-like naming expected, but NOT assumed as validated
+# - exact runtime names must be confirmed on the machine
+#
+# CONFIRMATION METHOD
+#   halcmd show pin | grep lcec
+#
+# DESIGN GOAL
+# - provide a clean, per-axis binding surface
+# - avoid "everything mixed in one file without structure"
+# - let third parties fill only the runtime transport side
+
+# ----------------------------------------------------------------------
+# RUNTIME REGISTRY — FILL/CONFIRM ON REAL MACHINE
+# ----------------------------------------------------------------------
+# AXIS X
+# REAL_X_6040 =
+# REAL_X_6060 =
+# REAL_X_607A =
+# REAL_X_6041 =
+# REAL_X_6061 =
+# REAL_X_6064 =
+#
+# AXIS Y
+# REAL_Y_6040 =
+# REAL_Y_6060 =
+# REAL_Y_607A =
+# REAL_Y_6041 =
+# REAL_Y_6061 =
+# REAL_Y_6064 =
+#
+# AXIS Z
+# REAL_Z_6040 =
+# REAL_Z_6060 =
+# REAL_Z_607A =
+# REAL_Z_6041 =
+# REAL_Z_6061 =
+# REAL_Z_6064 =
+#
+# COMMON EXPECTED LCEC-LIKE SHAPE
+#   lcec.0.<slave>.controlword
+#   lcec.0.<slave>.opmode
+#   lcec.0.<slave>.target-position
+#   lcec.0.<slave>.statusword
+#   lcec.0.<slave>.opmode-display
+#   lcec.0.<slave>.actual-position
+#
+# ALTERNATE NAMES SOMETIMES SEEN
+#   modes-of-operation
+#   modes-of-operation-display
+#   position-actual-value
+
+# ======================================================================
+# AXIS X
+# ======================================================================
+
+# ----------------------------------------------------------------------
+# PROJECT-SIDE SIGNALS
+# ----------------------------------------------------------------------
+newsig xyz-x-controlword     u32
+newsig xyz-x-opmode-cmd      s32
+newsig xyz-x-target-position s32
+newsig xyz-x-statusword      u32
+newsig xyz-x-opmode-display  s32
+newsig xyz-x-actual-position s32
+
+# ----------------------------------------------------------------------
+# SEMANTIC SIDE <-> PROJECT-SIDE TRANSPORT SURFACE
+# ----------------------------------------------------------------------
+net xyz-x-controlword-cmd      adapter_x.in-controlword      => xyz-x-controlword
+net xyz-x-opmode-cmd-sig       adapter_x.in-opmode           => xyz-x-opmode-cmd
+net xyz-x-target-position-cmd  adapter_x.in-target-position  => xyz-x-target-position
+
+net xyz-x-statusword-fb        xyz-x-statusword             => adapter_x.out-statusword
+net xyz-x-opmode-display-fb    xyz-x-opmode-display         => adapter_x.out-opmode-display
+net xyz-x-actual-position-fb   xyz-x-actual-position        => adapter_x.out-actual-position
+
+# ----------------------------------------------------------------------
+# EXPECTED LCEC SHAPE — AXIS X
+# ----------------------------------------------------------------------
+# Uncomment only after runtime confirmation.
+#
+# net xyz-x-controlword-rt      xyz-x-controlword     => lcec.0.<slave_x>.controlword
+# net xyz-x-opmode-cmd-rt       xyz-x-opmode-cmd      => lcec.0.<slave_x>.opmode
+# net xyz-x-target-position-rt  xyz-x-target-position => lcec.0.<slave_x>.target-position
+#
+# net xyz-x-statusword-rt       lcec.0.<slave_x>.statusword      => xyz-x-statusword
+# net xyz-x-opmode-display-rt   lcec.0.<slave_x>.opmode-display  => xyz-x-opmode-display
+# net xyz-x-actual-position-rt  lcec.0.<slave_x>.actual-position => xyz-x-actual-position
+
+# ----------------------------------------------------------------------
+# ALTERNATE LCEC SHAPE — AXIS X
+# ----------------------------------------------------------------------
+# net xyz-x-controlword-rt      xyz-x-controlword     => lcec.0.<slave_x>.controlword
+# net xyz-x-opmode-cmd-rt       xyz-x-opmode-cmd      => lcec.0.<slave_x>.modes-of-operation
+# net xyz-x-target-position-rt  xyz-x-target-position => lcec.0.<slave_x>.target-position
+#
+# net xyz-x-statusword-rt       lcec.0.<slave_x>.statusword                 => xyz-x-statusword
+# net xyz-x-opmode-display-rt   lcec.0.<slave_x>.modes-of-operation-display => xyz-x-opmode-display
+# net xyz-x-actual-position-rt  lcec.0.<slave_x>.position-actual-value      => xyz-x-actual-position
+
+# ======================================================================
+# AXIS Y
+# ======================================================================
+
+# ----------------------------------------------------------------------
+# PROJECT-SIDE SIGNALS
+# ----------------------------------------------------------------------
+newsig xyz-y-controlword     u32
+newsig xyz-y-opmode-cmd      s32
+newsig xyz-y-target-position s32
+newsig xyz-y-statusword      u32
+newsig xyz-y-opmode-display  s32
+newsig xyz-y-actual-position s32
+
+# ----------------------------------------------------------------------
+# SEMANTIC SIDE <-> PROJECT-SIDE TRANSPORT SURFACE
+# ----------------------------------------------------------------------
+net xyz-y-controlword-cmd      adapter_y.in-controlword      => xyz-y-controlword
+net xyz-y-opmode-cmd-sig       adapter_y.in-opmode           => xyz-y-opmode-cmd
+net xyz-y-target-position-cmd  adapter_y.in-target-position  => xyz-y-target-position
+
+net xyz-y-statusword-fb        xyz-y-statusword             => adapter_y.out-statusword
+net xyz-y-opmode-display-fb    xyz-y-opmode-display         => adapter_y.out-opmode-display
+net xyz-y-actual-position-fb   xyz-y-actual-position        => adapter_y.out-actual-position
+
+# ----------------------------------------------------------------------
+# EXPECTED LCEC SHAPE — AXIS Y
+# ----------------------------------------------------------------------
+# net xyz-y-controlword-rt      xyz-y-controlword     => lcec.0.<slave_y>.controlword
+# net xyz-y-opmode-cmd-rt       xyz-y-opmode-cmd      => lcec.0.<slave_y>.opmode
+# net xyz-y-target-position-rt  xyz-y-target-position => lcec.0.<slave_y>.target-position
+#
+# net xyz-y-statusword-rt       lcec.0.<slave_y>.statusword      => xyz-y-statusword
+# net xyz-y-opmode-display-rt   lcec.0.<slave_y>.opmode-display  => xyz-y-opmode-display
+# net xyz-y-actual-position-rt  lcec.0.<slave_y>.actual-position => xyz-y-actual-position
+
+# ----------------------------------------------------------------------
+# ALTERNATE LCEC SHAPE — AXIS Y
+# ----------------------------------------------------------------------
+# net xyz-y-controlword-rt      xyz-y-controlword     => lcec.0.<slave_y>.controlword
+# net xyz-y-opmode-cmd-rt       xyz-y-opmode-cmd      => lcec.0.<slave_y>.modes-of-operation
+# net xyz-y-target-position-rt  xyz-y-target-position => lcec.0.<slave_y>.target-position
+#
+# net xyz-y-statusword-rt       lcec.0.<slave_y>.statusword                 => xyz-y-statusword
+# net xyz-y-opmode-display-rt   lcec.0.<slave_y>.modes-of-operation-display => xyz-y-opmode-display
+# net xyz-y-actual-position-rt  lcec.0.<slave_y>.position-actual-value      => xyz-y-actual-position
+
+# ======================================================================
+# AXIS Z
+# ======================================================================
+
+# ----------------------------------------------------------------------
+# PROJECT-SIDE SIGNALS
+# ----------------------------------------------------------------------
+newsig xyz-z-controlword     u32
+newsig xyz-z-opmode-cmd      s32
+newsig xyz-z-target-position s32
+newsig xyz-z-statusword      u32
+newsig xyz-z-opmode-display  s32
+newsig xyz-z-actual-position s32
+
+# ----------------------------------------------------------------------
+# SEMANTIC SIDE <-> PROJECT-SIDE TRANSPORT SURFACE
+# ----------------------------------------------------------------------
+net xyz-z-controlword-cmd      adapter_z.in-controlword      => xyz-z-controlword
+net xyz-z-opmode-cmd-sig       adapter_z.in-opmode           => xyz-z-opmode-cmd
+net xyz-z-target-position-cmd  adapter_z.in-target-position  => xyz-z-target-position
+
+net xyz-z-statusword-fb        xyz-z-statusword             => adapter_z.out-statusword
+net xyz-z-opmode-display-fb    xyz-z-opmode-display         => adapter_z.out-opmode-display
+net xyz-z-actual-position-fb   xyz-z-actual-position        => adapter_z.out-actual-position
+
+# ----------------------------------------------------------------------
+# EXPECTED LCEC SHAPE — AXIS Z
+# ----------------------------------------------------------------------
+# net xyz-z-controlword-rt      xyz-z-controlword     => lcec.0.<slave_z>.controlword
+# net xyz-z-opmode-cmd-rt       xyz-z-opmode-cmd      => lcec.0.<slave_z>.opmode
+# net xyz-z-target-position-rt  xyz-z-target-position => lcec.0.<slave_z>.target-position
+#
+# net xyz-z-statusword-rt       lcec.0.<slave_z>.statusword      => xyz-z-statusword
+# net xyz-z-opmode-display-rt   lcec.0.<slave_z>.opmode-display  => xyz-z-opmode-display
+# net xyz-z-actual-position-rt  lcec.0.<slave_z>.actual-position => xyz-z-actual-position
+
+# ----------------------------------------------------------------------
+# ALTERNATE LCEC SHAPE — AXIS Z
+# ----------------------------------------------------------------------
+# net xyz-z-controlword-rt      xyz-z-controlword     => lcec.0.<slave_z>.controlword
+# net xyz-z-opmode-cmd-rt       xyz-z-opmode-cmd      => lcec.0.<slave_z>.modes-of-operation
+# net xyz-z-target-position-rt  xyz-z-target-position => lcec.0.<slave_z>.target-position
+#
+# net xyz-z-statusword-rt       lcec.0.<slave_z>.statusword                 => xyz-z-statusword
+# net xyz-z-opmode-display-rt   lcec.0.<slave_z>.modes-of-operation-display => xyz-z-opmode-display
+# net xyz-z-actual-position-rt  lcec.0.<slave_z>.position-actual-value      => xyz-z-actual-position
+
+# ----------------------------------------------------------------------
+# OPERATIONAL RULES
+# ----------------------------------------------------------------------
+# - one adapter instance per axis
+# - one backend slave or backend instance per axis
+# - do NOT share transport pins between axes
+# - do NOT share controlword paths between axes
+# - do NOT bypass mux/cw
+# - semantic ownership remains per axis
+#
+# FRAMEWORK AUTHORITY PER AXIS MUST REMAIN:
+#   cw_<axis>  -> adapter_<axis>.in-controlword
+#   mux_<axis> -> adapter_<axis>.in-opmode
+#   mux_<axis> -> adapter_<axis>.in-target-position
+#
+# FEEDBACK RETURN PATH PER AXIS MUST REMAIN:
+#   adapter_<axis>.out-statusword
+#   adapter_<axis>.out-opmode-display
+#   adapter_<axis>.out-actual-position
+#
+# END OF FILE

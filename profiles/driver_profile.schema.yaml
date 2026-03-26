@@ -1,0 +1,566 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+id: "opc_validation/driver_profile.schema.yaml"
+title: "OPC Validation CiA402 Driver Profile Schema"
+description: >-
+  Formal schema for declarative CiA402 driver profiles used by the opc_validation
+  framework. This schema defines integration contract only. It does not define
+  runtime logic, arbitration, or semantic behavior.
+type: object
+additionalProperties: false
+required:
+  - profile_version
+  - profile_kind
+  - identity
+  - contract
+  - capabilities
+  - backend_contract
+  - statusword_contract
+  - control_authority
+  - scaling
+  - axes
+  - integration_rules
+  - watchdog_semantics
+  - third_party_contract
+properties:
+  profile_version:
+    type: integer
+    minimum: 1
+  profile_kind:
+    const: ciA402_driver_profile
+
+  identity:
+    type: object
+    additionalProperties: false
+    required: [name, vendor, model, transport, workspace_base, intended_path, description]
+    properties:
+      name: {type: string, minLength: 1}
+      vendor: {type: string, minLength: 1}
+      model: {type: string, minLength: 1}
+      transport:
+        type: string
+        enum: [ethercat, mesa, sim, other]
+      workspace_base: {type: string, minLength: 1}
+      intended_path: {type: string, minLength: 1}
+      description: {type: string, minLength: 1}
+
+  contract:
+    type: object
+    additionalProperties: false
+    required:
+      - declarative_only
+      - no_logic_inside_profile
+      - no_semantic_override
+      - no_pipeline_change
+      - per_axis_isolation_required
+      - single_writer_required
+      - third_party_facing
+    properties:
+      declarative_only: {const: true}
+      no_logic_inside_profile: {const: true}
+      no_semantic_override: {const: true}
+      no_pipeline_change: {const: true}
+      per_axis_isolation_required: {const: true}
+      single_writer_required: {const: true}
+      third_party_facing: {const: true}
+
+  capabilities:
+    type: object
+    additionalProperties: false
+    required:
+      - cia402
+      - modes
+      - supervision
+      - observability
+      - fault_injection_architecture_present
+      - multi_axis_validated
+      - fault_reset_supported
+    properties:
+      cia402: {type: boolean}
+      modes:
+        type: object
+        additionalProperties: false
+        required: [csp, homing]
+        properties:
+          csp: {type: boolean}
+          homing: {type: boolean}
+      supervision:
+        type: object
+        additionalProperties: false
+        required: [motion_watchdog, home_watchdog]
+        properties:
+          motion_watchdog: {type: boolean}
+          home_watchdog: {type: boolean}
+      observability:
+        type: object
+        additionalProperties: false
+        required: [invmon, watchdog_visibility]
+        properties:
+          invmon: {type: boolean}
+          watchdog_visibility: {type: boolean}
+      fault_injection_architecture_present: {type: boolean}
+      multi_axis_validated: {type: boolean}
+      fault_reset_supported: {type: boolean}
+
+  backend_contract:
+    type: object
+    additionalProperties: false
+    required:
+      - minimal_required_signals
+      - adapter_component
+      - adapter_pins
+    properties:
+      minimal_required_signals:
+        type: object
+        additionalProperties: false
+        required: [commands, feedback]
+        properties:
+          commands:
+            type: array
+            items:
+              type: string
+              enum: [controlword, opmode_command, target_position]
+            minItems: 3
+            uniqueItems: true
+          feedback:
+            type: array
+            items:
+              type: string
+              enum: [statusword, opmode_display, actual_position]
+            minItems: 3
+            uniqueItems: true
+      adapter_component: {type: string, minLength: 1}
+      adapter_pins:
+        type: object
+        additionalProperties: false
+        required:
+          - in_controlword
+          - in_opmode
+          - in_target_position
+          - out_statusword
+          - out_opmode_display
+          - out_actual_position
+        properties:
+          in_controlword: {$ref: "#/$defs/pinDeclaration"}
+          in_opmode: {$ref: "#/$defs/pinDeclaration"}
+          in_target_position: {$ref: "#/$defs/pinDeclaration"}
+          out_statusword: {$ref: "#/$defs/pinDeclaration"}
+          out_opmode_display: {$ref: "#/$defs/pinDeclaration"}
+          out_actual_position: {$ref: "#/$defs/pinDeclaration"}
+      adapter_params:
+        type: object
+        additionalProperties: true
+
+  statusword_contract:
+    type: object
+    additionalProperties: false
+    required: [source, semantics_owner, decode_reference]
+    properties:
+      source: {type: string, minLength: 1}
+      semantics_owner: {type: string, minLength: 1}
+      decode_reference:
+        type: object
+        additionalProperties: false
+        required:
+          - ready_to_switch_on
+          - switched_on
+          - operation_enabled
+          - fault
+          - voltage_enabled
+          - quick_stop
+          - remote
+          - target_reached
+          - homing_attained
+          - homing_error
+        properties:
+          ready_to_switch_on: {$ref: "#/$defs/bitIndex"}
+          switched_on: {$ref: "#/$defs/bitIndex"}
+          operation_enabled: {$ref: "#/$defs/bitIndex"}
+          fault: {$ref: "#/$defs/bitIndex"}
+          voltage_enabled: {$ref: "#/$defs/bitIndex"}
+          quick_stop: {$ref: "#/$defs/bitIndex"}
+          remote: {$ref: "#/$defs/bitIndex"}
+          target_reached: {$ref: "#/$defs/bitIndex"}
+          homing_attained: {$ref: "#/$defs/bitIndex"}
+          homing_error: {$ref: "#/$defs/bitIndex"}
+      notes:
+        type: array
+        items: {type: string}
+
+  control_authority:
+    type: object
+    additionalProperties: false
+    required:
+      - controlword_final_writer
+      - opmode_final_writer
+      - target_position_final_writer
+      - authority_rules
+    properties:
+      controlword_final_writer: {$ref: "#/$defs/templateBinding"}
+      opmode_final_writer: {$ref: "#/$defs/templateBinding"}
+      target_position_final_writer: {$ref: "#/$defs/templateBinding"}
+      authority_rules:
+        type: array
+        minItems: 1
+        items: {type: string}
+
+  scaling:
+    type: object
+    additionalProperties: false
+    required:
+      - command_domain
+      - feedback_domain
+      - watchdog_feedback_domain
+      - per_axis_defaults
+      - rules
+    properties:
+      command_domain: {type: string, minLength: 1}
+      feedback_domain: {type: string, minLength: 1}
+      watchdog_feedback_domain: {type: string, minLength: 1}
+      bridge_path:
+        type: object
+        additionalProperties: false
+        properties:
+          counts_to_float_component_template: {type: string}
+          units_scale_component_template: {type: string}
+      per_axis_defaults:
+        type: object
+        minProperties: 1
+        additionalProperties: {$ref: "#/$defs/axisScaling"}
+      rules:
+        type: array
+        minItems: 1
+        items: {type: string}
+
+  axes:
+    type: object
+    minProperties: 1
+    additionalProperties: {$ref: "#/$defs/axisProfile"}
+
+  integration_rules:
+    type: object
+    additionalProperties: false
+    required:
+      - required_runtime_functions
+      - required_runtime_properties
+      - forbidden_behaviors
+      - validation_script
+      - expected_axes
+    properties:
+      required_runtime_functions:
+        type: array
+        minItems: 1
+        items: {type: string}
+      required_runtime_properties:
+        type: array
+        minItems: 1
+        items: {type: string}
+      forbidden_behaviors:
+        type: array
+        minItems: 1
+        items: {type: string}
+      validation_script: {type: string, minLength: 1}
+      expected_axes:
+        type: array
+        minItems: 1
+        uniqueItems: true
+        items: {type: string, minLength: 1}
+
+  watchdog_semantics:
+    type: object
+    additionalProperties: false
+    required: [motion_watchdog, home_watchdog]
+    properties:
+      motion_watchdog:
+        type: object
+        additionalProperties: false
+        required:
+          - active_fault_is_instantaneous
+          - fault_latched_persists_until_reset
+          - first_fault_code_preserves_first_event
+          - declared_fault_paths
+        properties:
+          active_fault_is_instantaneous: {type: boolean}
+          fault_latched_persists_until_reset: {type: boolean}
+          first_fault_code_preserves_first_event: {type: boolean}
+          declared_fault_paths:
+            type: object
+            additionalProperties: false
+            required: [response_timeout, stall, tracking_error]
+            properties:
+              response_timeout: {type: integer}
+              stall: {type: integer}
+              tracking_error: {type: integer}
+      home_watchdog:
+        type: object
+        additionalProperties: false
+        required: [external_supervision_only, no_semantic_override]
+        properties:
+          external_supervision_only: {type: boolean}
+          no_semantic_override: {type: boolean}
+      notes:
+        type: array
+        items: {type: string}
+
+  third_party_contract:
+    type: object
+    additionalProperties: false
+    required: [integrator_must_supply, integrator_must_not_supply]
+    properties:
+      integrator_must_supply:
+        type: array
+        minItems: 1
+        items: {type: string}
+      integrator_must_not_supply:
+        type: array
+        minItems: 1
+        items: {type: string}
+
+  example_substitution_for_real_drive:
+    type: object
+    additionalProperties: false
+    required: [description, replace_templates, invariant]
+    properties:
+      description: {type: string, minLength: 1}
+      replace_templates:
+        type: object
+        minProperties: 1
+        additionalProperties: {type: string}
+      invariant:
+        type: array
+        minItems: 1
+        items: {type: string}
+
+$defs:
+  bitIndex:
+    type: integer
+    minimum: 0
+    maximum: 31
+
+  pinDeclaration:
+    type: object
+    additionalProperties: false
+    required: [type, direction]
+    properties:
+      type:
+        type: string
+        enum: [bit, u32, s32, float]
+      direction:
+        type: string
+        enum: [in, out, io]
+
+  templateBinding:
+    type: object
+    additionalProperties: false
+    required: [source_signal_template, sink_pin_template]
+    properties:
+      source_signal_template: {type: string, minLength: 1}
+      sink_pin_template: {type: string, minLength: 1}
+
+  axisScaling:
+    type: object
+    additionalProperties: false
+    required: [ut_scale, mcsp_scale, fb_gain, counts_per_unit, machine_units_per_count]
+    properties:
+      ut_scale: {type: number}
+      mcsp_scale: {type: number}
+      fb_gain: {type: number}
+      counts_per_unit: {type: number}
+      machine_units_per_count: {type: number}
+
+  observedSignals:
+    type: array
+    minItems: 1
+    items: {type: string, minLength: 1}
+
+  backendSignalBinding:
+    type: object
+    additionalProperties: false
+    required: [type]
+    properties:
+      source_signal: {type: string}
+      source_writer: {type: string}
+      sink_pin: {type: string}
+      source_pin: {type: string}
+      raw_source_signal: {type: string}
+      raw_source_pin: {type: string}
+      post_injection_signal: {type: string}
+      consumer_pins:
+        type: array
+        items: {type: string}
+      raw_counts_signal: {type: string}
+      counts_consumers:
+        type: array
+        items: {type: string}
+      converted_units_signal: {type: string}
+      units_consumers:
+        type: array
+        items: {type: string}
+      watchdog_signal: {type: string}
+      watchdog_consumer:
+        type: array
+        items: {type: string}
+      type:
+        type: string
+        enum: [bit, u32, s32, float]
+
+  motionWatchdogProfile:
+    type: object
+    additionalProperties: false
+    required:
+      - instance
+      - enable_pin
+      - motion_req_pin
+      - csp_ready_pin
+      - op_enabled_pin
+      - pos_cmd_pin
+      - pos_fb_pin
+      - reset_pin
+      - observed_outputs
+      - params
+    properties:
+      instance: {type: string, minLength: 1}
+      enable_pin: {type: string, minLength: 1}
+      motion_req_pin: {type: string, minLength: 1}
+      csp_ready_pin: {type: string, minLength: 1}
+      op_enabled_pin: {type: string, minLength: 1}
+      pos_cmd_pin: {type: string, minLength: 1}
+      pos_fb_pin: {type: string, minLength: 1}
+      reset_pin: {type: string, minLength: 1}
+      observed_outputs: {$ref: "#/$defs/observedSignals"}
+      params:
+        type: object
+        additionalProperties: false
+        required:
+          - movement_epsilon
+          - tracking_error_limit
+          - arm_delta_cycles
+          - response_timeout_cycles
+          - stall_timeout_cycles
+        properties:
+          movement_epsilon: {type: number}
+          tracking_error_limit: {type: number}
+          arm_delta_cycles: {type: integer}
+          response_timeout_cycles: {type: integer}
+          stall_timeout_cycles: {type: integer}
+
+  homeWatchdogProfile:
+    type: object
+    additionalProperties: false
+    required:
+      - instance
+      - enable_pin
+      - home_req_pin
+      - home_owner_pin
+      - homing_pin
+      - homed_pin
+      - done_lat_pin
+      - err_lat_pin
+      - mode_ok_pin
+      - state_pin
+      - reason_pin
+      - mode_tmr_pin
+      - done_tmr_pin
+      - prog_tmr_pin
+      - reset_pin
+      - observed_outputs
+      - params
+    properties:
+      instance: {type: string, minLength: 1}
+      enable_pin: {type: string, minLength: 1}
+      home_req_pin: {type: string, minLength: 1}
+      home_owner_pin: {type: string, minLength: 1}
+      homing_pin: {type: string, minLength: 1}
+      homed_pin: {type: string, minLength: 1}
+      done_lat_pin: {type: string, minLength: 1}
+      err_lat_pin: {type: string, minLength: 1}
+      mode_ok_pin: {type: string, minLength: 1}
+      state_pin: {type: string, minLength: 1}
+      reason_pin: {type: string, minLength: 1}
+      mode_tmr_pin: {type: string, minLength: 1}
+      done_tmr_pin: {type: string, minLength: 1}
+      prog_tmr_pin: {type: string, minLength: 1}
+      reset_pin: {type: string, minLength: 1}
+      observed_outputs: {$ref: "#/$defs/observedSignals"}
+      params:
+        type: object
+        additionalProperties: false
+        required:
+          - owner_timeout_cycles
+          - mode_timeout_limit
+          - done_timeout_limit
+          - prog_timeout_limit
+        properties:
+          owner_timeout_cycles: {type: integer}
+          mode_timeout_limit: {type: integer}
+          done_timeout_limit: {type: integer}
+          prog_timeout_limit: {type: integer}
+
+  invariantMonitorProfile:
+    type: object
+    additionalProperties: false
+    required: [instance, required_inputs]
+    properties:
+      instance: {type: string, minLength: 1}
+      required_inputs:
+        type: array
+        minItems: 1
+        items: {type: string, minLength: 1}
+
+  faultInjectionBoundary:
+    type: object
+    additionalProperties: false
+    required:
+      - instance
+      - sw_input
+      - sw_output
+      - pos_fb_input
+      - pos_fb_output
+      - supported_injections
+    properties:
+      instance: {type: string, minLength: 1}
+      sw_input: {type: string, minLength: 1}
+      sw_output: {type: string, minLength: 1}
+      pos_fb_input: {type: string, minLength: 1}
+      pos_fb_output: {type: string, minLength: 1}
+      supported_injections:
+        type: array
+        minItems: 1
+        items: {type: string, minLength: 1}
+      tracking_offset_runtime_default: {type: number}
+
+  axisProfile:
+    type: object
+    additionalProperties: false
+    required: [backend_mapping, supervision, observability, fault_injection_boundary]
+    properties:
+      backend_mapping:
+        type: object
+        additionalProperties: false
+        required:
+          - controlword
+          - opmode_command
+          - target_position
+          - statusword
+          - opmode_display
+          - actual_position
+        properties:
+          controlword: {$ref: "#/$defs/backendSignalBinding"}
+          opmode_command: {$ref: "#/$defs/backendSignalBinding"}
+          target_position: {$ref: "#/$defs/backendSignalBinding"}
+          statusword: {$ref: "#/$defs/backendSignalBinding"}
+          opmode_display: {$ref: "#/$defs/backendSignalBinding"}
+          actual_position: {$ref: "#/$defs/backendSignalBinding"}
+      supervision:
+        type: object
+        additionalProperties: false
+        required: [motion_watchdog, home_watchdog]
+        properties:
+          motion_watchdog: {$ref: "#/$defs/motionWatchdogProfile"}
+          home_watchdog: {$ref: "#/$defs/homeWatchdogProfile"}
+      observability:
+        type: object
+        additionalProperties: false
+        required: [invariant_monitor]
+        properties:
+          invariant_monitor: {$ref: "#/$defs/invariantMonitorProfile"}
+      fault_injection_boundary: {$ref: "#/$defs/faultInjectionBoundary"}

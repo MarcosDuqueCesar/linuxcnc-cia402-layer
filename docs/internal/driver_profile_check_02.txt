@@ -1,0 +1,18 @@
+===== DRIVER PROFILE / FUNCTIONAL CHECK =====
+Fri Mar 20 09:01:44 AM JST 2026
+
+--- BASELINE ---
+FALSE
+FALSE
+
+--- HOME REQUEST ---
+home_wd.fault=FALSE
+
+--- RESET ---
+home_wd.fault_latched=FALSE
+
+--- RETURN IDLE ---
+
+--- FINAL STATE ---
+FALSE
+FALSE

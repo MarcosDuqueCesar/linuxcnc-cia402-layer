@@ -1,0 +1,9 @@
+# --- Core quick-stop policy block ---
+#
+# Role:
+# - hold quick-stop policy wiring/configuration in one place
+# - keep quick-stop treatment explicit in the modular structure
+
+# --- Quick-stop policy block (PDS-integrated) ---
+
+setp pds.quick-stop FALSE

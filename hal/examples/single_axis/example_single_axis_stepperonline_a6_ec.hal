@@ -1,0 +1,23 @@
+# hal/examples/single_axis/example_single_axis_stepperonline_a6_ec.hal
+#
+# Single-axis pilot wrapper for Stepperonline A6-EC.
+#
+# IMPORTANT
+# - keep this wrapper thin
+# - do not duplicate core loading here
+# - do not duplicate topology logic here
+# - the active integration point remains the validated single-axis topology
+#
+# PROFILE
+# - stepperonline_a6_ec (CiA402 EtherCAT)
+#
+# ROLE
+# - binds the validated semantic pipeline to the A6-EC backend binding layer
+#
+# NOTE
+# - real hardware binding occurs in:
+#   hal/adapters/stepperonline_a6_ec_single_axis_binding.hal
+# - this file must remain transport-agnostic
+
+source hal/topology/single_axis/single_axis_base.hal
+source hal/adapters/stepperonline_a6_ec_single_axis_binding.hal

@@ -1,0 +1,76 @@
+component fault_injector_x "Deterministic single-axis fault injector for PDS and motion watchdog validation";
+
+pin in  u32   sw_in                   "Raw statusword from adapter/backend";
+pin in  float pos_fb_in               "Raw feedback position in machine units";
+pin in  bit   inject_fault            "Force CiA402 fault statusword (0x0208)";
+pin in  bit   inject_fault_reaction   "Force CiA402 fault-reaction-active statusword (0x020F)";
+pin in  bit   inject_stall            "Freeze watchdog feedback at first sampled value while asserted";
+pin in  bit   inject_response_timeout "Freeze watchdog feedback before first movement is seen";
+pin in  bit   inject_tracking         "Offset watchdog feedback to force tracking error";
+pin in  bit   reset                   "Reset internal frozen sample";
+
+param rw float tracking_offset = 1.0000 "Absolute offset injected into watchdog feedback when inject_tracking is true";
+
+pin out u32   sw_out                  "Injected statusword for PDS/UT consumers";
+pin out float pos_fb_out              "Injected feedback for motion watchdog consumer";
+pin out bit   freeze_active           "TRUE while feedback freeze is active";
+pin out bit   fault_active            "TRUE while fault/fault-reaction injection is active";
+pin out s32   mode                    "0 passthrough, 1 fault, 2 fault-reaction, 3 stall-freeze, 4 response-timeout-freeze, 5 tracking-offset";
+
+variable float frozen_fb;
+variable int   freeze_latched;
+
+function update;
+license "MIT";
+
+;;
+
+FUNCTION(update)
+{
+    int freeze_req;
+
+    if (reset) {
+        frozen_fb = pos_fb_in;
+        freeze_latched = 0;
+    }
+
+    sw_out = sw_in;
+    pos_fb_out = pos_fb_in;
+    freeze_active = 0;
+    fault_active = 0;
+    mode = 0;
+
+    if (inject_fault_reaction) {
+        sw_out = 0x020Fu;
+        fault_active = 1;
+        mode = 2;
+    } else if (inject_fault) {
+        sw_out = 0x0208u;
+        fault_active = 1;
+        mode = 1;
+    }
+
+    freeze_req = (inject_stall || inject_response_timeout) ? 1 : 0;
+
+    if (!freeze_req) {
+        freeze_latched = 0;
+        frozen_fb = pos_fb_in;
+    } else {
+        if (!freeze_latched) {
+            frozen_fb = pos_fb_in;
+            freeze_latched = 1;
+        }
+        pos_fb_out = frozen_fb;
+        freeze_active = 1;
+        if (inject_response_timeout) {
+            mode = 4;
+        } else {
+            mode = 3;
+        }
+    }
+
+    if (inject_tracking) {
+        pos_fb_out = pos_fb_out - tracking_offset;
+        mode = 5;
+    }
+}

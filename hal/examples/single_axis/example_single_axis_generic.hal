@@ -1,0 +1,17 @@
+# --- Example: Single-axis CiA402 topology (generic) ---
+#
+# Role:
+# - minimal entrypoint for single-axis validation
+# - delegates full topology to topology/single_axis
+#
+# This file is intentionally thin.
+# Do NOT duplicate logic here.
+#
+# Usage:
+#   HALFILE = hal/examples/single_axis/example_single_axis_generic.hal
+#
+# Notes:
+# - all semantics are defined in core/
+# - all wiring is defined in topology/
+
+source hal/topology/single_axis/single_axis_base.hal

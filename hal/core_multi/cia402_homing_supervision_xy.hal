@@ -1,0 +1,6 @@
+# --- Home watchdog (multi-axis XY) ---
+
+loadrt cia402_home_watchdog names=home_wd_x,home_wd_y
+
+addf home_wd_x.update servo-thread
+addf home_wd_y.update servo-thread

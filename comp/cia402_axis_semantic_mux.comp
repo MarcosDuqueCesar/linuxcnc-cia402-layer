@@ -1,0 +1,85 @@
+// === INVARIANT CONTRACT (V0.9.8.14) ===
+// HOME has absolute precedence over CSP in selection
+// mux selection != operational readiness
+// CSP can be selected while not ready/op-enabled
+// selection must never encode readiness assumptions
+// ======================================
+
+component cia402_axis_semantic_mux "CiA402 semantic ownership mux per axis";
+
+pin in  bit  home_active;
+pin in  bit  home_homing;
+pin in  s32  home_om;
+pin in  s32  home_tp;
+
+pin in  bit  csp_owner;
+pin in  s32  csp_om;
+pin in  s32  csp_tp;
+
+pin out s32  om;
+pin out s32  tp;
+
+pin out bit  sel_home;
+pin out bit  sel_csp;
+
+pin out s32  state;
+pin out s32  reason;
+
+function update;
+license "MIT";
+
+;;
+
+enum {
+    MUX_S_IDLE = 0,
+    MUX_S_HOME = 1,
+    MUX_S_CSP  = 2
+};
+
+enum {
+    MUX_R_IDLE          = 0,
+    MUX_R_HOME_SELECTED = 1,
+    MUX_R_CSP_SELECTED  = 2,
+    MUX_R_FALLBACK_SAFE = 3
+};
+
+FUNCTION(update)
+{
+    sel_home = 0;
+    sel_csp  = 0;
+
+    om = 0;
+    tp = 0;
+
+    /*
+     * Ownership rule (revised):
+     *
+     * - home_active is the canonical ownership signal for HOME
+     * - home_homing is diagnostic only; it does not decide ownership
+     * - csp_owner is the canonical ownership signal for CSP
+     *   (asserted both in WAIT_MODE_CSP bootstrap and ACTIVE)
+     * - priority is HOME > CSP
+     * - when no source owns the channel, outputs fall back to safe zero
+     */
+
+    // INVARIANT: HOME precedence over CSP (hard rule)
+    if (home_active) {
+        sel_home = 1;
+        om = home_om;
+        tp = home_tp;
+        state = MUX_S_HOME;
+        reason = MUX_R_HOME_SELECTED;
+    }
+    else if (csp_owner) {
+        // NOTE: sel_csp does NOT imply mcsp.ready or op-enabled
+        sel_csp = 1;
+        om = csp_om;
+        tp = csp_tp;
+        state = MUX_S_CSP;
+        reason = MUX_R_CSP_SELECTED;
+    }
+    else {
+        state = MUX_S_IDLE;
+        reason = MUX_R_FALLBACK_SAFE;
+    }
+}

@@ -1,0 +1,34 @@
+# --- Core CiA402 base block (multi-axis XY, transitional) ---
+#
+# Role:
+# - load semantic pipeline per axis (X, Y)
+# - keep same structure as single, but duplicated explicitly
+#
+# NOTE:
+# - transitional version (not parameterized yet)
+
+loadrt machine_safety_gate      names=msg_x,msg_y
+loadrt cia402_pds               names=pds_x,pds_y
+loadrt cia402_homing            names=ut_x,ut_y
+loadrt cia402_motion_csp        names=mcsp_x,mcsp_y
+loadrt cia402_axis_semantic_mux names=mux_x,mux_y
+loadrt cia402_invariant_monitor names=invmon_x,invmon_y
+loadrt cia402_cw_compose        names=cw_x,cw_y
+loadrt cia402_backend_adapter   names=adapter_x,adapter_y
+
+addf msg_x.update       servo-thread
+addf msg_y.update       servo-thread
+addf pds_x.update       servo-thread
+addf pds_y.update       servo-thread
+addf ut_x.update        servo-thread
+addf ut_y.update        servo-thread
+addf mcsp_x.update      servo-thread
+addf mcsp_y.update      servo-thread
+addf mux_x.update       servo-thread
+addf mux_y.update       servo-thread
+addf invmon_x.update    servo-thread
+addf invmon_y.update    servo-thread
+addf cw_x.update        servo-thread
+addf cw_y.update        servo-thread
+addf adapter_x          servo-thread
+addf adapter_y          servo-thread

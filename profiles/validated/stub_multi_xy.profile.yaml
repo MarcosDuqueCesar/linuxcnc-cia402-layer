@@ -1,0 +1,477 @@
+profile_version: 1
+profile_kind: ciA402_driver_profile
+
+identity:
+  name: stub_multi_xy_runtime
+  vendor: internal_stub
+  model: cia402_backend_adapter
+  transport: sim
+  workspace_base: ~/linuxcnc/configs/opc_validation
+  intended_path: /profiles/validated/stub_multi_xy.profile.yaml
+  description: >-
+    Validated internal runtime profile for the X/Y simulation harness.
+    This profile is declarative only. It does not introduce logic, does not modify
+    pipeline semantics, and reflects the exact signal boundaries expected by the
+    framework already validated in runtime.
+
+contract:
+  declarative_only: true
+  no_logic_inside_profile: true
+  no_semantic_override: true
+  no_pipeline_change: true
+  per_axis_isolation_required: true
+  single_writer_required: true
+  third_party_facing: true
+
+capabilities:
+  cia402: true
+  modes:
+    csp: true
+    homing: true
+  supervision:
+    motion_watchdog: true
+    home_watchdog: true
+  observability:
+    invmon: true
+    watchdog_visibility: true
+  fault_injection_architecture_present: true
+  multi_axis_validated: true
+  fault_reset_supported: true
+
+backend_contract:
+  minimal_required_signals:
+    commands:
+      - controlword
+      - opmode_command
+      - target_position
+    feedback:
+      - statusword
+      - opmode_display
+      - actual_position
+  adapter_component: cia402_backend_adapter
+  adapter_pins:
+    in_controlword:
+      type: u32
+      direction: in
+    in_opmode:
+      type: s32
+      direction: in
+    in_target_position:
+      type: s32
+      direction: in
+    out_statusword:
+      type: u32
+      direction: out
+    out_opmode_display:
+      type: s32
+      direction: out
+    out_actual_position:
+      type: s32
+      direction: out
+  adapter_params:
+    position_scale:
+      type: float
+      runtime_default: 1.0
+    passthrough_mode:
+      type: bit
+      runtime_default: true
+    homing_done_cycles:
+      type: u32
+      runtime_default: 50
+    inject_fault:
+      type: bit
+      runtime_default: false
+    max_follow_delta:
+      type: s32
+      runtime_default: 20
+
+statusword_contract:
+  source: backend_statusword
+  semantics_owner: existing_pipeline
+  decode_reference:
+    ready_to_switch_on: 0
+    switched_on: 1
+    operation_enabled: 2
+    fault: 3
+    voltage_enabled: 4
+    quick_stop: 5
+    remote: 9
+    target_reached: 10
+    homing_attained: 12
+    homing_error: 13
+  notes:
+    - The profile does not redefine PDS semantics.
+    - The profile only declares the statusword source used by the framework.
+    - In the validated harness, fault injection may override the statusword path after the backend output.
+
+control_authority:
+  controlword_final_writer:
+    source_signal_template: cw_<axis>.cw-final
+    sink_pin_template: adapter_<axis>.in-controlword
+  opmode_final_writer:
+    source_signal_template: mux_<axis>.om
+    sink_pin_template: adapter_<axis>.in-opmode
+  target_position_final_writer:
+    source_signal_template: mux_<axis>.tp
+    sink_pin_template: adapter_<axis>.in-target-position
+  authority_rules:
+    - Backend adapter is a sink for final semantic writers only.
+    - Driver profile must not arbitrate between HOME and CSP.
+    - Driver profile must not compose controlword.
+    - Driver profile must not clear or latch faults beyond existing pipeline semantics.
+
+scaling:
+  command_domain: counts_s32
+  feedback_domain: counts_s32
+  watchdog_feedback_domain: machine_units_float
+  bridge_path:
+    counts_to_float_component_template: apf_<axis>
+    units_scale_component_template: fb_units_<axis>
+  per_axis_defaults:
+    x:
+      ut_scale: 1000
+      mcsp_scale: 1000
+      fb_gain: 0.001
+      counts_per_unit: 1000
+      machine_units_per_count: 0.001
+    y:
+      ut_scale: 1000
+      mcsp_scale: 1000
+      fb_gain: 0.001
+      counts_per_unit: 1000
+      machine_units_per_count: 0.001
+  rules:
+    - Actual position enters the adapter contract in counts.
+    - CSP and watchdog feedback consume machine units after conversion.
+    - Scaling must be explicit in the profile and never inferred.
+
+axes:
+  x:
+    backend_mapping:
+      controlword:
+        source_signal: cw-final-x
+        source_writer: cw_x.cw-final
+        sink_pin: adapter_x.in-controlword
+        type: u32
+      opmode_command:
+        source_signal: om-x
+        source_writer: mux_x.om
+        sink_pin: adapter_x.in-opmode
+        type: s32
+      target_position:
+        source_signal: tp-x
+        source_writer: mux_x.tp
+        sink_pin: adapter_x.in-target-position
+        type: s32
+      statusword:
+        raw_source_signal: sw-raw-x
+        raw_source_pin: adapter_x.out-statusword
+        post_injection_signal: sw-x
+        consumer_pins:
+          - pds_x.sw
+          - ut_x.sw
+        type: u32
+      opmode_display:
+        source_signal: omd-x
+        source_pin: adapter_x.out-opmode-display
+        consumer_pins:
+          - ut_x.omd
+          - mcsp_x.omd
+        type: s32
+      actual_position:
+        raw_counts_signal: ap-x
+        source_pin: adapter_x.out-actual-position
+        counts_consumers:
+          - ut_x.ap
+          - apf_x.in
+        converted_units_signal: fb-units-x
+        units_consumers:
+          - mcsp_x.pos-fb
+          - fault_inj_x.pos-fb-in
+        watchdog_signal: fb-wd-x
+        watchdog_consumer:
+          - motion_wd_x.pos-fb
+        type: s32
+    supervision:
+      motion_watchdog:
+        instance: motion_wd_x
+        enable_pin: motion_wd_x.enable
+        motion_req_pin: motion_wd_x.motion-req
+        csp_ready_pin: motion_wd_x.csp-ready
+        op_enabled_pin: motion_wd_x.op-enabled
+        pos_cmd_pin: motion_wd_x.pos-cmd
+        pos_fb_pin: motion_wd_x.pos-fb
+        reset_pin: motion_wd_x.reset
+        observed_outputs:
+          - motion_wd_x.fault
+          - motion_wd_x.fault-latched
+          - motion_wd_x.first-fault-code
+          - motion_wd_x.response-timeout
+          - motion_wd_x.stall
+          - motion_wd_x.tracking-error
+        params:
+          movement_epsilon: 0.0005
+          tracking_error_limit: 0.2500
+          arm_delta_cycles: 4
+          response_timeout_cycles: 2000
+          stall_timeout_cycles: 4000
+      home_watchdog:
+        instance: home_wd_x
+        enable_pin: home_wd_x.enable
+        home_req_pin: home_wd_x.home-req
+        home_owner_pin: home_wd_x.home-owner
+        homing_pin: home_wd_x.homing
+        homed_pin: home_wd_x.homed
+        done_lat_pin: home_wd_x.done-lat
+        err_lat_pin: home_wd_x.err-lat
+        mode_ok_pin: home_wd_x.mode-ok
+        state_pin: home_wd_x.state
+        reason_pin: home_wd_x.reason
+        mode_tmr_pin: home_wd_x.mode-tmr
+        done_tmr_pin: home_wd_x.done-tmr
+        prog_tmr_pin: home_wd_x.prog-tmr
+        reset_pin: home_wd_x.reset
+        observed_outputs:
+          - home_wd_x.fault
+          - home_wd_x.fault-latched
+          - home_wd_x.first-fault-code
+        params:
+          owner_timeout_cycles: 2000
+          mode_timeout_limit: 2000
+          done_timeout_limit: 120000
+          prog_timeout_limit: 10000
+    observability:
+      invariant_monitor:
+        instance: invmon_x
+        required_inputs:
+          - invmon_x.sel-home
+          - invmon_x.sel-csp
+          - invmon_x.home-owner
+          - invmon_x.csp-owner
+          - invmon_x.csp-ready
+          - invmon_x.mux-state
+          - invmon_x.mux-reason
+          - invmon_x.mcsp-state
+          - invmon_x.mcsp-reason
+          - invmon_x.ut-state
+          - invmon_x.ut-reason
+    fault_injection_boundary:
+      instance: fault_inj_x
+      sw_input: fault_inj_x.sw-in
+      sw_output: fault_inj_x.sw-out
+      pos_fb_input: fault_inj_x.pos-fb-in
+      pos_fb_output: fault_inj_x.pos-fb-out
+      supported_injections:
+        - inject-fault
+        - inject-fault-reaction
+        - inject-stall
+        - inject-response-timeout
+        - inject-tracking
+        - reset
+      tracking_offset_runtime_default: 2.5000
+
+  y:
+    backend_mapping:
+      controlword:
+        source_signal: cw-final-y
+        source_writer: cw_y.cw-final
+        sink_pin: adapter_y.in-controlword
+        type: u32
+      opmode_command:
+        source_signal: om-y
+        source_writer: mux_y.om
+        sink_pin: adapter_y.in-opmode
+        type: s32
+      target_position:
+        source_signal: tp-y
+        source_writer: mux_y.tp
+        sink_pin: adapter_y.in-target-position
+        type: s32
+      statusword:
+        raw_source_signal: sw-raw-y
+        raw_source_pin: adapter_y.out-statusword
+        post_injection_signal: sw-y
+        consumer_pins:
+          - pds_y.sw
+          - ut_y.sw
+        type: u32
+      opmode_display:
+        source_signal: omd-y
+        source_pin: adapter_y.out-opmode-display
+        consumer_pins:
+          - ut_y.omd
+          - mcsp_y.omd
+        type: s32
+      actual_position:
+        raw_counts_signal: ap-y
+        source_pin: adapter_y.out-actual-position
+        counts_consumers:
+          - ut_y.ap
+          - apf_y.in
+        converted_units_signal: fb-units-y
+        units_consumers:
+          - mcsp_y.pos-fb
+          - fault_inj_y.pos-fb-in
+        watchdog_signal: fb-wd-y
+        watchdog_consumer:
+          - motion_wd_y.pos-fb
+        type: s32
+    supervision:
+      motion_watchdog:
+        instance: motion_wd_y
+        enable_pin: motion_wd_y.enable
+        motion_req_pin: motion_wd_y.motion-req
+        csp_ready_pin: motion_wd_y.csp-ready
+        op_enabled_pin: motion_wd_y.op-enabled
+        pos_cmd_pin: motion_wd_y.pos-cmd
+        pos_fb_pin: motion_wd_y.pos-fb
+        reset_pin: motion_wd_y.reset
+        observed_outputs:
+          - motion_wd_y.fault
+          - motion_wd_y.fault-latched
+          - motion_wd_y.first-fault-code
+          - motion_wd_y.response-timeout
+          - motion_wd_y.stall
+          - motion_wd_y.tracking-error
+        params:
+          movement_epsilon: 0.0005
+          tracking_error_limit: 0.2500
+          arm_delta_cycles: 4
+          response_timeout_cycles: 2000
+          stall_timeout_cycles: 4000
+      home_watchdog:
+        instance: home_wd_y
+        enable_pin: home_wd_y.enable
+        home_req_pin: home_wd_y.home-req
+        home_owner_pin: home_wd_y.home-owner
+        homing_pin: home_wd_y.homing
+        homed_pin: home_wd_y.homed
+        done_lat_pin: home_wd_y.done-lat
+        err_lat_pin: home_wd_y.err-lat
+        mode_ok_pin: home_wd_y.mode-ok
+        state_pin: home_wd_y.state
+        reason_pin: home_wd_y.reason
+        mode_tmr_pin: home_wd_y.mode-tmr
+        done_tmr_pin: home_wd_y.done-tmr
+        prog_tmr_pin: home_wd_y.prog-tmr
+        reset_pin: home_wd_y.reset
+        observed_outputs:
+          - home_wd_y.fault
+          - home_wd_y.fault-latched
+          - home_wd_y.first-fault-code
+        params:
+          owner_timeout_cycles: 2000
+          mode_timeout_limit: 2000
+          done_timeout_limit: 120000
+          prog_timeout_limit: 10000
+    observability:
+      invariant_monitor:
+        instance: invmon_y
+        required_inputs:
+          - invmon_y.sel-home
+          - invmon_y.sel-csp
+          - invmon_y.home-owner
+          - invmon_y.csp-owner
+          - invmon_y.csp-ready
+          - invmon_y.mux-state
+          - invmon_y.mux-reason
+          - invmon_y.mcsp-state
+          - invmon_y.mcsp-reason
+          - invmon_y.ut-state
+          - invmon_y.ut-reason
+    fault_injection_boundary:
+      instance: fault_inj_y
+      sw_input: fault_inj_y.sw-in
+      sw_output: fault_inj_y.sw-out
+      pos_fb_input: fault_inj_y.pos-fb-in
+      pos_fb_output: fault_inj_y.pos-fb-out
+      supported_injections:
+        - inject-fault
+        - inject-fault-reaction
+        - inject-stall
+        - inject-response-timeout
+        - inject-tracking
+        - reset
+      tracking_offset_runtime_default: 2.5000
+
+integration_rules:
+  required_runtime_functions:
+    - adapter_x
+    - adapter_y
+    - pds_x.update
+    - pds_y.update
+    - ut_x.update
+    - ut_y.update
+    - mcsp_x.update
+    - mcsp_y.update
+    - mux_x.update
+    - mux_y.update
+    - motion_wd_x.update
+    - motion_wd_y.update
+    - home_wd_x.update
+    - home_wd_y.update
+    - invmon_x.update
+    - invmon_y.update
+  required_runtime_properties:
+    - servo-thread present
+    - adapter functions present in servo-thread
+    - required adapter pins present with correct signatures
+    - watchdog visibility present
+    - update.time pins visible
+  forbidden_behaviors:
+    - introduce arbitration logic inside profile
+    - redefine watchdog semantics
+    - bypass mux ownership
+    - write backend pins from multiple final writers
+    - hide scaling assumptions
+  validation_script: scripts/validate_driver_profile.sh
+  expected_axes:
+    - x
+    - y
+
+watchdog_semantics:
+  motion_watchdog:
+    fault_is_instantaneous: true
+    fault_latched_persists_until_reset: true
+    first_fault_code_preserves_first_event: true
+    declared_fault_paths:
+      response_timeout: 1
+      stall: 2
+      tracking_error: 3
+  home_watchdog:
+    external_supervision_only: true
+    no_semantic_override: true
+  notes:
+    - This profile declares watchdog wiring and parameters only.
+    - The profile must not introduce alternative latching semantics.
+
+third_party_contract:
+  consumer_needs_internal_hal_knowledge: false
+  profile_is_runtime_executable: false
+  provides_integration_contract: true
+  integrator_must_supply:
+    - real backend pin names when replacing adapter_x/adapter_y with production drive pins
+    - real scaling values
+    - per-axis instances preserving isolation
+    - supervision visibility preserved
+  integrator_must_not_supply:
+    - new logic in the profile
+    - alternate mux semantics
+    - hidden backend-dependent arbitration
+    - semantic shortcuts that require knowledge of internal HAL
+
+example_substitution_for_real_drive:
+  description: >-
+    Replace only the sink/source pin templates below when binding a real drive.
+    The rest of the framework contract remains unchanged.
+  replace_templates:
+    adapter_<axis>.in-controlword: "<real_drive_hal_pin_for_controlword_6040>"
+    adapter_<axis>.in-opmode: "<real_drive_hal_pin_for_mode_command_6060>"
+    adapter_<axis>.in-target-position: "<real_drive_hal_pin_for_target_position_607A_or_equivalent>"
+    adapter_<axis>.out-statusword: "<real_drive_hal_pin_for_statusword_6041>"
+    adapter_<axis>.out-opmode-display: "<real_drive_hal_pin_for_mode_display_6061>"
+    adapter_<axis>.out-actual-position: "<real_drive_hal_pin_for_actual_position_6064_or_equivalent>"
+  invariant:
+    - final writer remains cw_<axis>/mux_<axis>
+    - supervision remains motion_wd_<axis>/home_wd_<axis>
+    - observability remains invmon_<axis>

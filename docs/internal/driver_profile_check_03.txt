@@ -1,0 +1,79 @@
+===== DRIVER PROFILE / COUPLING CHECK =====
+Fri Mar 20 09:02:13 AM JST 2026
+
+--- SEARCH DIRECT STUB USAGE ---
+hal/stub_test_modular_axis_csp_lcnc.hal:net sw                 adapter.out-statusword => pds.sw ut.sw
+hal/stub_test_modular_axis_csp_lcnc.hal:net ap                 adapter.out-actual-position => ut.ap apf.in
+hal/stub_test_modular_axis_csp_lcnc.hal:net omd                adapter.out-opmode-display  => ut.omd mcsp.omd
+hal/stub_test_modular_axis_csp_lcnc.hal:net om                 mux.om => adapter.in-opmode
+hal/stub_test_modular_axis_csp_lcnc.hal:net tp                 mux.tp => adapter.in-target-position
+hal/stub_test_modular_axis_csp_lcnc.hal:net cw-final           cw.cw-final  => adapter.in-controlword
+hal/stub_test_modular_axis_csp_lcnc.hal:# setp adapter.opmode-apply-delay-cycles 20
+hal/stub_test_modular_axis_csp_lcnc.hal:# setp adapter.homing-run-cycles         50
+hal/stub_test_modular_axis_csp_lcnc.hal:# setp adapter.done-hold-cycles          30
+hal/stub_test_modular_axis_csp_lcnc.hal.bak_20260319_120435:net sw                 adapter.out-statusword => pds.sw ut.sw
+hal/stub_test_modular_axis_csp_lcnc.hal.bak_20260319_120435:net ap                 adapter.out-actual-position => ut.ap apf.in
+hal/stub_test_modular_axis_csp_lcnc.hal.bak_20260319_120435:net omd                adapter.out-opmode-display  => ut.omd mcsp.omd
+hal/stub_test_modular_axis_csp_lcnc.hal.bak_20260319_120435:net om                 mux.om => adapter.in-opmode
+hal/stub_test_modular_axis_csp_lcnc.hal.bak_20260319_120435:net tp                 mux.tp => adapter.in-target-position
+hal/stub_test_modular_axis_csp_lcnc.hal.bak_20260319_120435:net cw-final           cw.cw-final  => adapter.in-controlword
+hal/stub_test_modular_axis_csp_lcnc.hal.bak_20260319_120435:# setp adapter.opmode-apply-delay-cycles 20
+hal/stub_test_modular_axis_csp_lcnc.hal.bak_20260319_120435:# setp adapter.homing-run-cycles         50
+hal/stub_test_modular_axis_csp_lcnc.hal.bak_20260319_120435:# setp adapter.done-hold-cycles          30
+
+--- SEARCH BYPASS PATHS ---
+hal/stub_test_modular_axis_csp_lcnc.hal:#                        cia402_stub
+hal/stub_test_modular_axis_csp_lcnc.hal:#   msg -> pds -> home_gate -> ut -> mcsp -> mux -> cw -> stub -> feedback conversion
+hal/stub_test_modular_axis_csp_lcnc.hal:# --- PDS <-> machine policy <-> stub
+hal/stub_test_modular_axis_csp_lcnc.hal:#   stub actual position (s32 counts) -> conv_s32_float -> scale 0.001 -> mcsp.pos-fb
+hal/stub_test_modular_axis_csp_lcnc.hal:#   show pin stub
+hal/stub_test_modular_axis_csp_lcnc.hal.bak_20260319_120435:#                        cia402_stub
+hal/stub_test_modular_axis_csp_lcnc.hal.bak_20260319_120435:#   msg -> pds -> home_gate -> ut -> mcsp -> mux -> cw -> stub -> feedback conversion
+hal/stub_test_modular_axis_csp_lcnc.hal.bak_20260319_120435:# --- PDS <-> machine policy <-> stub
+hal/stub_test_modular_axis_csp_lcnc.hal.bak_20260319_120435:#   stub actual position (s32 counts) -> conv_s32_float -> scale 0.001 -> mcsp.pos-fb
+hal/stub_test_modular_axis_csp_lcnc.hal.bak_20260319_120435:#   show pin stub
+hal/stub_test_modular_pds.hal:# --- Full modular CiA402 stub validation path with machine policy gate ---
+hal/stub_test_modular_pds.hal:#   5) cia402_stub        -> simulated CiA402 drive
+hal/stub_test_modular_pds.hal:loadrt cia402_stub         names=stub
+hal/stub_test_modular_pds.hal:#   msg -> pds -> home_gate -> ut -> cwcomp -> stub
+hal/stub_test_modular_pds.hal:addf stub.update      servo-thread
+hal/stub_test_modular_pds.hal:# --- PDS <-> machine policy <-> stub
+hal/stub_test_modular_pds.hal:net sw                   stub.out-statusword    => pds.sw
+hal/stub_test_modular_pds.hal:# --- Homing adapter -> compose -> stub
+hal/stub_test_modular_pds.hal:net cw                   cwcomp.cw-final        => stub.in-controlword
+hal/stub_test_modular_pds.hal:net om                   ut.om                  => stub.in-opmode
+hal/stub_test_modular_pds.hal:net tp                   ut.tp                  => stub.in-target-position
+hal/stub_test_modular_pds.hal:net omd                  stub.out-opmode-display  => ut.omd
+hal/stub_test_modular_pds.hal:net ap                   stub.out-actual-position => ut.ap
+hal/stub_test_modular_pds.hal:setp stub.opmode-apply-delay-cycles 20
+hal/stub_test_modular_pds.hal:setp stub.homing-run-cycles         50
+hal/stub_test_modular_pds.hal:setp stub.done-hold-cycles          30
+hal/stub_test_modular_pds.hal:#   show pin stub
+hal/stub_test_modular_pds.hal:#   stub.out-statusword
+hal/stub_test.hal:#   cia402_homing -> cia402_stub
+hal/stub_test.hal:loadrt cia402_stub   names=stub
+hal/stub_test.hal:addf stub.update servo-thread
+hal/stub_test.hal:# --- Homing adapter -> stub
+hal/stub_test.hal:net cw  ut.cw  => stub.in-controlword
+hal/stub_test.hal:net om  ut.om  => stub.in-opmode
+hal/stub_test.hal:net tp  ut.tp  => stub.in-target-position
+hal/stub_test.hal:net sw  stub.out-statusword      => ut.sw
+hal/stub_test.hal:net omd stub.out-opmode-display  => ut.omd
+hal/stub_test.hal:net ap  stub.out-actual-position => ut.ap
+hal/stub_test.hal:setp stub.opmode-apply-delay-cycles 20
+hal/stub_test.hal:setp stub.homing-run-cycles         50
+hal/stub_test.hal:setp stub.done-hold-cycles          30
+hal/stub_test_modular.hal:#   3) cia402_stub       -> simulated CiA402 drive
+hal/stub_test_modular.hal:#   hal/stub_test_modular_pds.hal
+hal/stub_test_modular.hal:loadrt cia402_stub       names=stub
+hal/stub_test_modular.hal:addf stub.update   servo-thread
+hal/stub_test_modular.hal:# --- Homing adapter -> compose -> stub
+hal/stub_test_modular.hal:net cw     cwcomp.cw-final => stub.in-controlword
+hal/stub_test_modular.hal:net om     ut.om           => stub.in-opmode
+hal/stub_test_modular.hal:net tp     ut.tp           => stub.in-target-position
+hal/stub_test_modular.hal:net sw  stub.out-statusword      => ut.sw
+hal/stub_test_modular.hal:net omd stub.out-opmode-display  => ut.omd
+hal/stub_test_modular.hal:net ap  stub.out-actual-position => ut.ap
+hal/stub_test_modular.hal:setp stub.opmode-apply-delay-cycles 20
+hal/stub_test_modular.hal:setp stub.homing-run-cycles         50
+hal/stub_test_modular.hal:setp stub.done-hold-cycles          30

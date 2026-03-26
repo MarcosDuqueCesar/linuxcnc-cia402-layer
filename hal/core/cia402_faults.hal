@@ -1,0 +1,33 @@
+# --- Core motion watchdog block ---
+#
+# Role:
+# - define motion watchdog loading, scheduling and signal wiring
+# - keep CSP supervision logic separated from topology glue
+#
+# Current naming matches the active single-axis topology.
+
+# MOTION WATCHDOG
+
+loadrt cia402_motion_watchdog names=motion_wd
+
+addf motion_wd.update servo-thread
+
+net allow-motion            => motion_wd.enable
+net motion-req              => motion_wd.motion-req
+net mcsp-ready              => motion_wd.csp-ready
+net pds-op-enabled          => motion_wd.op-enabled
+net xpos-cmd                => motion_wd.pos-cmd
+net motion-watchdog-reset   => motion_wd.reset
+
+net motion-watchdog-fault    motion_wd.fault
+net motion-watchdog-latched  motion_wd.fault-latched
+net motion-watchdog-response motion_wd.response-timeout
+net motion-watchdog-stall    motion_wd.stall
+net motion-watchdog-trackerr motion_wd.tracking-error
+net motion-watchdog-code     motion_wd.first-fault-code
+
+setp motion_wd.movement-epsilon        0.0005
+setp motion_wd.tracking-error-limit    0.2500
+setp motion_wd.arm-delta-cycles        4
+setp motion_wd.response-timeout-cycles 2000
+setp motion_wd.stall-timeout-cycles    4000

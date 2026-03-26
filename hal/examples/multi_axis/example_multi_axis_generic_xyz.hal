@@ -1,0 +1,17 @@
+# --- Example: Multi-axis CiA402 topology (XYZ) ---
+#
+# Role:
+# - minimal entrypoint for multi-axis (XYZ) validation
+# - delegates full topology to topology/multi_axis
+#
+# This file is intentionally thin.
+# Do NOT duplicate logic here.
+#
+# Usage:
+#   HALFILE = hal/examples/multi_axis/example_multi_axis_generic_xyz.hal
+#
+# Notes:
+# - this example assumes independent X, Y and Z axes
+# - all semantic loading is contained in the topology file
+
+source hal/topology/multi_axis/multi_axis_modular_xyz.hal
