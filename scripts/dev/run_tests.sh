@@ -5,9 +5,9 @@ WORKSPACE="${WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PROFILE_PATH="${PROFILE_PATH:-$WORKSPACE/profiles/stub_multi_xy.profile.yaml}"
 SCHEMA_PATH="${SCHEMA_PATH:-$WORKSPACE/profiles/driver_profile.schema.yaml}"
 VALIDATOR="${VALIDATOR:-$WORKSPACE/scripts/validate_driver_profile.sh}"
-CTL_SCRIPT="${CTL_SCRIPT:-$WORKSPACE/scripts/single_axis_ctl.sh}"
-DIAG_SCRIPT="${DIAG_SCRIPT:-$WORKSPACE/scripts/diag_single_axis.sh}"
-CLEAR_MULTI_SCRIPT="${CLEAR_MULTI_SCRIPT:-$WORKSPACE/scripts/faultinj_clear_state_multi.sh}"
+CTL_SCRIPT="${CTL_SCRIPT:-$WORKSPACE/scripts/obs/single_axis_ctl.sh}"
+DIAG_SCRIPT="${DIAG_SCRIPT:-$WORKSPACE/scripts/obs/diag_single_axis.sh}"
+CLEAR_MULTI_SCRIPT="${CLEAR_MULTI_SCRIPT:-$WORKSPACE/scripts/faultinj/faultinj_clear_state_multi.sh}"
 OUTDIR="${OUTDIR:-$WORKSPACE/test_runtime_$(date +%Y%m%d_%H%M%S)}"
 
 mkdir -p "$OUTDIR"
@@ -128,9 +128,9 @@ fault_script_for_axis() {
   local fault_kind="$1"
   local axis="$2"
   case "$fault_kind" in
-    response_timeout) echo "$WORKSPACE/scripts/faultinj_test_response_timeout_${axis}.sh" ;;
-    stall)            echo "$WORKSPACE/scripts/faultinj_test_stall_${axis}.sh" ;;
-    tracking)         echo "$WORKSPACE/scripts/faultinj_test_tracking_${axis}.sh" ;;
+    response_timeout) echo "$WORKSPACE/scripts/faultinj/faultinj_test_response_timeout_${axis}.sh" ;;
+    stall)            echo "$WORKSPACE/scripts/faultinj/faultinj_test_stall_${axis}.sh" ;;
+    tracking)         echo "$WORKSPACE/scripts/faultinj/faultinj_test_tracking_${axis}.sh" ;;
     *)                return 1 ;;
   esac
 }

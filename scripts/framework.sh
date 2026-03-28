@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 # --------------------------------------------------
 # COLORS
@@ -8,8 +8,6 @@ RED="\e[31m"
 GREEN="\e[32m"
 YELLOW="\e[33m"
 CYAN="\e[36m"
-WHITE="\e[97m"
-BOLD="\e[1m"
 RESET="\e[0m"
 
 # --------------------------------------------------
@@ -42,7 +40,10 @@ SELECTED_HAL=""
 SELECTED_INI=""
 
 load_state() {
-  [[ -f "$STATE_FILE" ]] && source "$STATE_FILE"
+  if [[ -f "$STATE_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$STATE_FILE"
+  fi
 }
 
 save_state() {
@@ -57,39 +58,28 @@ SELECTED_INI="${SELECTED_INI}"
 EOF
 }
 
+clear_state() {
+  rm -f "$STATE_FILE"
+  SELECTED_PROFILE=""
+  SELECTED_PROFILE_NAME=""
+  SELECTED_PROFILE_VENDOR=""
+  SELECTED_PROFILE_MODEL=""
+  SELECTED_TOPOLOGY=""
+  SELECTED_HAL=""
+  SELECTED_INI=""
+}
+
 # --------------------------------------------------
 # HELPERS
 # --------------------------------------------------
-header() {
-  clear
-  echo -e "${CYAN}============================================================${RESET}"
-  echo -e "${WHITE}${BOLD}         LinuxCNC CIA402 Framework Tool${RESET}"
-  echo -e "${CYAN}============================================================${RESET}"
-  echo
-}
+ok()   { echo -e "${GREEN}[OK]${RESET} $*"; }
+warn() { echo -e "${YELLOW}[WARN]${RESET} $*"; }
+fail() { echo -e "${RED}[FAIL]${RESET} $*" >&2; }
+info() { echo -e "${CYAN}[INFO]${RESET} $*"; }
 
-pause() {
-  echo
-  read -rp "Press ENTER to continue..."
-}
-
-ok()   { echo -e "${GREEN}[OK]${RESET} $1"; }
-warn() { echo -e "${YELLOW}[WARN]${RESET} $1"; }
-fail() { echo -e "${RED}[FAIL]${RESET} $1"; }
-info() { echo -e "${CYAN}[INFO]${RESET} $1"; }
-
-script_exists() {
-  [[ -f "$1" ]]
-}
-
-status_mark_file() {
-  local path="$1"
-  [[ -f "$path" ]] && echo -e "${GREEN}Found${RESET}" || echo -e "${RED}Missing${RESET}"
-}
-
-status_mark_dir() {
-  local path="$1"
-  [[ -d "$path" ]] && echo -e "${GREEN}Found${RESET}" || echo -e "${RED}Missing${RESET}"
+die() {
+  fail "$*"
+  exit 1
 }
 
 timestamp() {
@@ -101,9 +91,88 @@ run_with_log() {
   shift
   local file="${LOG_DIR}/${name}_$(timestamp).log"
   info "Logging to: $file"
-  echo
   "$@" | tee "$file"
-  return 0
+}
+
+relpath() {
+  local p="$1"
+  if [[ "$p" == "${WORKSPACE}"* ]]; then
+    echo "${p#$WORKSPACE/}"
+  else
+    echo "$p"
+  fi
+}
+
+require_file() {
+  local path="$1"
+  [[ -f "$path" ]] || die "File not found: $path"
+}
+
+require_dir() {
+  local path="$1"
+  [[ -d "$path" ]] || die "Directory not found: $path"
+}
+
+resolve_path() {
+  local input="$1"
+  if [[ "$input" = /* ]]; then
+    echo "$input"
+  else
+    echo "${WORKSPACE}/${input}"
+  fi
+}
+
+basename_noext() {
+  local x="$1"
+  x="$(basename "$x")"
+  x="${x%.driver.yaml}"
+  x="${x%.profile.yaml}"
+  x="${x%.yaml}"
+  echo "$x"
+}
+
+print_status_hints() {
+  local any_missing=0
+
+  if [[ -z "$SELECTED_PROFILE" ]]; then
+    any_missing=1
+  fi
+  if [[ -z "$SELECTED_TOPOLOGY" ]]; then
+    any_missing=1
+  fi
+  if [[ -z "$SELECTED_HAL" ]]; then
+    any_missing=1
+  fi
+
+  if [[ "$any_missing" -eq 0 ]]; then
+    return 0
+  fi
+
+  echo
+  echo "Hints:"
+
+  if [[ -z "$SELECTED_PROFILE" ]]; then
+    echo "  - List profiles:   scripts/framework.sh list-profiles"
+    echo "  - Select one:      scripts/framework.sh set-profile <path>"
+  fi
+
+  if [[ -z "$SELECTED_TOPOLOGY" ]]; then
+    echo "  - Set topology:    scripts/framework.sh set-topology <single_axis|multi_axis|gantry>"
+  fi
+
+  if [[ -z "$SELECTED_HAL" ]]; then
+    echo "  - List HAL:        scripts/framework.sh list-hal"
+    echo "  - Select HAL:      scripts/framework.sh set-hal <path>"
+  fi
+
+  if [[ -z "$SELECTED_INI" ]]; then
+    echo "  - Optional INI:    scripts/framework.sh set-ini <path-to-your-linuxcnc-ini>"
+  fi
+
+  if [[ -n "$SELECTED_PROFILE" ]]; then
+    echo "  - Try suggestions: scripts/framework.sh suggest"
+    echo "  - Apply them:      scripts/framework.sh apply-suggestions"
+  fi
 }
 
 # --------------------------------------------------
@@ -136,219 +205,15 @@ load_profile_metadata() {
     return
   fi
 
-  SELECTED_PROFILE_NAME="$(profile_read_field name)"
-  SELECTED_PROFILE_VENDOR="$(profile_read_field vendor)"
-  SELECTED_PROFILE_MODEL="$(profile_read_field model)"
-}
-
-basename_noext() {
-  local x="$1"
-  x="$(basename "$x")"
-  echo "${x%.yaml}"
-}
-
-path_noext() {
-  local x="$1"
-  x="$(basename "$x")"
-  echo "${x%.hal}"
+  SELECTED_PROFILE_NAME="$(profile_read_field name || true)"
+  SELECTED_PROFILE_VENDOR="$(profile_read_field vendor || true)"
+  SELECTED_PROFILE_MODEL="$(profile_read_field model || true)"
 }
 
 # --------------------------------------------------
-# STATUS PANEL
+# SUGGESTION LOGIC
 # --------------------------------------------------
-status_panel() {
-  echo -e "${CYAN}------------------------ [ STATUS ] ------------------------${RESET}"
-
-  [[ -n "$SELECTED_PROFILE" ]] \
-    && ok "Profile: ${SELECTED_PROFILE#$WORKSPACE/}" \
-    || warn "Profile: not selected"
-
-  [[ -n "$SELECTED_TOPOLOGY" ]] \
-    && ok "Topology: $SELECTED_TOPOLOGY" \
-    || warn "Topology: not selected"
-
-  [[ -n "$SELECTED_HAL" ]] \
-    && ok "HAL: ${SELECTED_HAL#$WORKSPACE/}" \
-    || warn "HAL: not selected"
-
-  [[ -n "$SELECTED_INI" ]] \
-    && ok "INI: ${SELECTED_INI#$WORKSPACE/}" \
-    || warn "INI: not selected"
-
-  echo
-}
-
-# --------------------------------------------------
-# PROFILE SELECTION
-# --------------------------------------------------
-select_profile_from_category() {
-  local category="$1"
-  local -a files
-
-  mapfile -t files < <(find "${PROFILES_DIR}/${category}" -maxdepth 1 -name "*.yaml" 2>/dev/null | sort)
-
-  if [[ ${#files[@]} -eq 0 ]]; then
-    warn "No profiles found in profiles/${category}"
-    pause
-    return 2
-  fi
-
-  echo "Select profile:"
-  for i in "${!files[@]}"; do
-    echo "[$i] ${files[$i]#$WORKSPACE/}"
-  done
-  echo
-
-  read -rp "Choice: " idx
-
-  [[ -z "${files[$idx]:-}" ]] && {
-    fail "Invalid selection"
-    pause
-    return 2
-  }
-
-  SELECTED_PROFILE="${files[$idx]}"
-  load_profile_metadata
-  ok "Profile selected"
-  save_state
-  pause
-  return 0
-}
-
-select_profile_menu() {
-  header
-  echo "Select profile category:"
-  echo "1) validated"
-  echo "2) reference"
-  echo "3) experimental"
-  echo "0) Back"
-  echo
-
-  read -rp "Choice: " opt
-  case "$opt" in
-    1) select_profile_from_category "validated" ;;
-    2) select_profile_from_category "reference" ;;
-    3) select_profile_from_category "experimental" ;;
-    0) return ;;
-    *)
-      fail "Invalid option"
-      pause
-      ;;
-  esac
-}
-
-# --------------------------------------------------
-# TOPOLOGY
-# --------------------------------------------------
-select_topology() {
-  header
-  echo "Select topology:"
-  echo "1) single_axis"
-  echo "2) multi_axis"
-  echo "3) gantry"
-  echo "0) Back"
-  echo
-
-  read -rp "Choice: " opt
-
-  case "$opt" in
-    1) SELECTED_TOPOLOGY="single_axis" ;;
-    2) SELECTED_TOPOLOGY="multi_axis" ;;
-    3) SELECTED_TOPOLOGY="gantry" ;;
-    0) return ;;
-    *)
-      fail "Invalid option"
-      pause
-      return
-      ;;
-  esac
-
-  ok "Topology selected: $SELECTED_TOPOLOGY"
-  save_state
-  pause
-}
-
-# --------------------------------------------------
-# HAL / INI MANUAL SELECTION
-# --------------------------------------------------
-select_hal() {
-  header
-
-  [[ -z "$SELECTED_TOPOLOGY" ]] && {
-    warn "Select topology first"
-    pause
-    return
-  }
-
-  mapfile -t files < <(find "${HAL_DIR}/examples/${SELECTED_TOPOLOGY}" -maxdepth 1 -name "*.hal" 2>/dev/null | sort)
-
-  if [[ ${#files[@]} -eq 0 ]]; then
-    warn "No HAL examples found for topology: $SELECTED_TOPOLOGY"
-    pause
-    return
-  fi
-
-  echo "Select HAL example:"
-  for i in "${!files[@]}"; do
-    echo "[$i] ${files[$i]#$WORKSPACE/}"
-  done
-  echo
-
-  read -rp "Choice: " idx
-
-  [[ -z "${files[$idx]:-}" ]] && {
-    fail "Invalid selection"
-    pause
-    return
-  }
-
-  SELECTED_HAL="${files[$idx]}"
-  ok "HAL selected"
-  save_state
-  pause
-}
-
-select_ini() {
-  header
-
-  [[ -z "$SELECTED_TOPOLOGY" ]] && {
-    warn "Select topology first"
-    pause
-    return
-  }
-
-  mapfile -t files < <(find "${INI_DIR}/${SELECTED_TOPOLOGY}" -maxdepth 1 -name "*.ini" 2>/dev/null | sort)
-
-  if [[ ${#files[@]} -eq 0 ]]; then
-    warn "No INI files found for topology: $SELECTED_TOPOLOGY"
-    pause
-    return
-  fi
-
-  echo "Select INI:"
-  for i in "${!files[@]}"; do
-    echo "[$i] ${files[$i]#$WORKSPACE/}"
-  done
-  echo
-
-  read -rp "Choice: " idx
-
-  [[ -z "${files[$idx]:-}" ]] && {
-    fail "Invalid selection"
-    pause
-    return
-  }
-
-  SELECTED_INI="${files[$idx]}"
-  ok "INI selected"
-  save_state
-  pause
-}
-
-# --------------------------------------------------
-# PROFILE-ASSISTED MATCHING
-# --------------------------------------------------
-suggest_topology_from_ini_or_hal() {
+suggest_topology_from_path() {
   local p="$1"
   case "$p" in
     *single_axis*) echo "single_axis" ;;
@@ -360,23 +225,21 @@ suggest_topology_from_ini_or_hal() {
 
 suggest_hal_for_profile() {
   profile_present || return 1
+  [[ -d "${HAL_DIR}/examples" ]] || return 1
 
   local profile_base vendor match
   profile_base="$(basename_noext "$SELECTED_PROFILE")"
   vendor="$SELECTED_PROFILE_VENDOR"
 
-  # 1) Try exact single-axis vendor-specific example
-  match="$(find "${HAL_DIR}/examples" -name "*${profile_base}*.hal" 2>/dev/null | head -n 1)"
+  match="$(find "${HAL_DIR}/examples" -type f -name "*${profile_base}*.hal" 2>/dev/null | head -n 1)"
   [[ -n "$match" ]] && { echo "$match"; return 0; }
 
-  # 2) Try vendor-only match
   if [[ -n "$vendor" ]]; then
-    match="$(find "${HAL_DIR}/examples" -name "*${vendor}*.hal" 2>/dev/null | head -n 1)"
+    match="$(find "${HAL_DIR}/examples" -type f -name "*${vendor}*.hal" 2>/dev/null | head -n 1)"
     [[ -n "$match" ]] && { echo "$match"; return 0; }
   fi
 
-  # 3) Generic fallback
-  match="$(find "${HAL_DIR}/examples/single_axis" -name "example_single_axis_generic.hal" 2>/dev/null | head -n 1)"
+  match="$(find "${HAL_DIR}/examples/single_axis" -type f -name "example_single_axis_generic.hal" 2>/dev/null | head -n 1)"
   [[ -n "$match" ]] && { echo "$match"; return 0; }
 
   return 1
@@ -384,123 +247,100 @@ suggest_hal_for_profile() {
 
 suggest_ini_for_profile() {
   profile_present || return 1
+  [[ -d "${INI_DIR}" ]] || return 1
 
   local profile_base vendor match
   profile_base="$(basename_noext "$SELECTED_PROFILE")"
   vendor="$SELECTED_PROFILE_VENDOR"
 
-  # 1) Exact ini
-  match="$(find "${INI_DIR}" -name "*${profile_base}*.ini" 2>/dev/null | head -n 1)"
+  match="$(find "${INI_DIR}" -type f -name "*${profile_base}*.ini" 2>/dev/null | head -n 1)"
   [[ -n "$match" ]] && { echo "$match"; return 0; }
 
-  # 2) Vendor-based
   if [[ -n "$vendor" ]]; then
-    match="$(find "${INI_DIR}" -name "*${vendor}*.ini" 2>/dev/null | head -n 1)"
+    match="$(find "${INI_DIR}" -type f -name "*${vendor}*.ini" 2>/dev/null | head -n 1)"
     [[ -n "$match" ]] && { echo "$match"; return 0; }
   fi
-
-  # 3) Generic fallback
-  match="$(find "${INI_DIR}/single_axis" -name "single_axis_generic.ini" 2>/dev/null | head -n 1)"
-  [[ -n "$match" ]] && { echo "$match"; return 0; }
 
   return 1
 }
 
-profile_assisted_setup() {
-  header
+# --------------------------------------------------
+# REPORTING
+# --------------------------------------------------
+print_status() {
+  echo "Framework status"
+  echo "workspace: ${WORKSPACE}"
+  echo
 
-  if ! profile_present; then
-    warn "Select a profile first"
-    pause
-    return
+  if [[ -n "$SELECTED_PROFILE" ]]; then
+    ok "Profile: $(relpath "$SELECTED_PROFILE")"
+    echo "  name   : ${SELECTED_PROFILE_NAME:-<unknown>}"
+    echo "  vendor : ${SELECTED_PROFILE_VENDOR:-<unknown>}"
+    echo "  model  : ${SELECTED_PROFILE_MODEL:-<unknown>}"
+  else
+    warn "Profile: not selected"
   fi
 
-  info "Profile-assisted setup"
-  echo
+  if [[ -n "$SELECTED_TOPOLOGY" ]]; then
+    ok "Topology: ${SELECTED_TOPOLOGY}"
+  else
+    warn "Topology: not selected"
+  fi
+
+  if [[ -n "$SELECTED_HAL" ]]; then
+    ok "HAL: $(relpath "$SELECTED_HAL")"
+  else
+    warn "HAL: not selected"
+  fi
+
+  if [[ -n "$SELECTED_INI" ]]; then
+    ok "INI: $(relpath "$SELECTED_INI")"
+  else
+    info "INI: not selected (optional, user-specific)"
+  fi
+
+  print_status_hints
+}
+
+print_suggestions() {
+  if ! profile_present; then
+    die "No profile selected"
+  fi
 
   local suggested_hal suggested_ini suggested_topology
   suggested_hal="$(suggest_hal_for_profile || true)"
   suggested_ini="$(suggest_ini_for_profile || true)"
 
-  [[ -n "$suggested_hal" ]] && suggested_topology="$(suggest_topology_from_ini_or_hal "$suggested_hal")"
-  [[ -z "$suggested_topology" && -n "$suggested_ini" ]] && suggested_topology="$(suggest_topology_from_ini_or_hal "$suggested_ini")"
+  if [[ -n "$suggested_hal" ]]; then
+    suggested_topology="$(suggest_topology_from_path "$suggested_hal")"
+  elif [[ -n "$suggested_ini" ]]; then
+    suggested_topology="$(suggest_topology_from_path "$suggested_ini")"
+  else
+    suggested_topology=""
+  fi
 
+  echo "Suggestions for selected profile"
+  echo
   echo "Profile:"
+  echo "  file   : $(relpath "$SELECTED_PROFILE")"
   echo "  name   : ${SELECTED_PROFILE_NAME:-<unknown>}"
   echo "  vendor : ${SELECTED_PROFILE_VENDOR:-<unknown>}"
   echo "  model  : ${SELECTED_PROFILE_MODEL:-<unknown>}"
   echo
 
-  [[ -n "$suggested_topology" ]] \
-    && ok "Suggested topology: $suggested_topology" \
-    || warn "No topology suggestion available"
-
-  [[ -n "$suggested_hal" ]] \
-    && ok "Suggested HAL: ${suggested_hal#$WORKSPACE/}" \
-    || warn "No HAL suggestion available"
-
-  [[ -n "$suggested_ini" ]] \
-    && ok "Suggested INI: ${suggested_ini#$WORKSPACE/}" \
-    || warn "No INI suggestion available"
-
-  echo
-  echo "1) Accept all suggestions"
-  echo "2) Accept topology only"
-  echo "3) Accept HAL only"
-  echo "4) Accept INI only"
-  echo "5) Keep current selections"
-  echo "0) Back"
-  echo
-
-  read -rp "Choice: " opt
-
-  case "$opt" in
-    1)
-      [[ -n "$suggested_topology" ]] && SELECTED_TOPOLOGY="$suggested_topology"
-      [[ -n "$suggested_hal" ]] && SELECTED_HAL="$suggested_hal"
-      [[ -n "$suggested_ini" ]] && SELECTED_INI="$suggested_ini"
-      ok "Suggestions applied"
-      ;;
-    2)
-      [[ -n "$suggested_topology" ]] && SELECTED_TOPOLOGY="$suggested_topology"
-      ok "Topology applied"
-      ;;
-    3)
-      [[ -n "$suggested_hal" ]] && SELECTED_HAL="$suggested_hal"
-      ok "HAL applied"
-      ;;
-    4)
-      [[ -n "$suggested_ini" ]] && SELECTED_INI="$suggested_ini"
-      ok "INI applied"
-      ;;
-    5)
-      info "Keeping current selections"
-      ;;
-    0)
-      return
-      ;;
-    *)
-      fail "Invalid option"
-      ;;
-  esac
-
-  save_state
-  pause
+  [[ -n "$suggested_topology" ]] && ok "Suggested topology: $suggested_topology" || warn "Suggested topology: none"
+  [[ -n "$suggested_hal" ]] && ok "Suggested HAL: $(relpath "$suggested_hal")" || warn "Suggested HAL: none"
+  [[ -n "$suggested_ini" ]] && ok "Suggested INI: $(relpath "$suggested_ini")" || info "Suggested INI: none"
 }
 
-# --------------------------------------------------
-# CROSS-CHECKS
-# --------------------------------------------------
-cross_check_selections() {
-  header
+cross_check() {
   echo "Selection cross-check"
   echo
 
   [[ -z "$SELECTED_PROFILE" ]] && warn "No profile selected"
   [[ -z "$SELECTED_HAL" ]] && warn "No HAL selected"
-  [[ -z "$SELECTED_INI" ]] && warn "No INI selected"
   [[ -z "$SELECTED_TOPOLOGY" ]] && warn "No topology selected"
-
+  [[ -z "$SELECTED_INI" ]] && info "No INI selected (optional)"
   echo
 
   if [[ -n "$SELECTED_TOPOLOGY" && -n "$SELECTED_HAL" ]]; then
@@ -520,121 +360,253 @@ cross_check_selections() {
   fi
 
   if profile_present && [[ -n "$SELECTED_HAL" ]]; then
-    if [[ -n "$SELECTED_PROFILE_VENDOR" && "$SELECTED_HAL" == *"${SELECTED_PROFILE_VENDOR}"* ]]; then
-      ok "HAL appears vendor-consistent with selected profile"
-    elif [[ "$SELECTED_HAL" == *"generic"* ]]; then
-      warn "HAL is generic; vendor-specific match not enforced"
+    if [[ "$SELECTED_HAL" == *"${SELECTED_PROFILE_VENDOR}"* || "$SELECTED_HAL" == *"$(basename_noext "$SELECTED_PROFILE")"* ]]; then
+      ok "HAL appears consistent with selected profile"
     else
-      warn "HAL may not match selected profile vendor"
+      warn "HAL does not obviously match selected profile"
     fi
   fi
 
   if profile_present && [[ -n "$SELECTED_INI" ]]; then
-    if [[ -n "$SELECTED_PROFILE_VENDOR" && "$SELECTED_INI" == *"${SELECTED_PROFILE_VENDOR}"* ]]; then
-      ok "INI appears vendor-consistent with selected profile"
-    elif [[ "$SELECTED_INI" == *"generic"* ]]; then
-      warn "INI is generic; vendor-specific match not enforced"
+    if [[ "$SELECTED_INI" == *"${SELECTED_PROFILE_VENDOR}"* || "$SELECTED_INI" == *"$(basename_noext "$SELECTED_PROFILE")"* ]]; then
+      ok "INI appears consistent with selected profile"
     else
-      warn "INI may not match selected profile vendor"
+      warn "INI does not obviously match selected profile"
     fi
   fi
-
-  pause
 }
 
 # --------------------------------------------------
-# GUIDED WORKFLOW
+# LIST COMMANDS
 # --------------------------------------------------
-guided_workflow() {
-  header
-  info "Guided workflow"
-  echo
+list_profiles() {
+  local category="${1:-}"
 
-  [[ -z "$SELECTED_TOPOLOGY" ]] && {
-    warn "No topology selected"
-    pause
-    return
-  }
+  case "$category" in
+    "")
+      find "${PROFILES_DIR}" \
+        \( -path "${PROFILES_DIR}/driver/*.yaml" \
+        -o -path "${PROFILES_DIR}/reference/*.yaml" \
+        -o -path "${PROFILES_DIR}/validated/*.yaml" \) \
+        -type f | sort | sed "s|^${WORKSPACE}/||"
+      ;;
+    driver|reference|validated)
+      require_dir "${PROFILES_DIR}/${category}"
+      find "${PROFILES_DIR}/${category}" -maxdepth 1 -type f -name "*.yaml" | sort | sed "s|^${WORKSPACE}/||"
+      ;;
+    *)
+      die "Invalid profile category: $category (expected: driver, reference, or validated)"
+      ;;
+  esac
+}
 
-  if [[ ! -f "${SCRIPTS_DIR}/diag.sh" ]]; then
-    warn "diag.sh not found"
-    pause
-    return
-  fi
+list_hal() {
+  local topology="${1:-}"
+  require_dir "${HAL_DIR}/examples"
 
-  info "Running axis diagnostic..."
-  if [[ "$SELECTED_TOPOLOGY" == "single_axis" ]]; then
-    bash "${SCRIPTS_DIR}/diag.sh" single stdout || true
+  if [[ -n "$topology" ]]; then
+    require_dir "${HAL_DIR}/examples/${topology}"
+    find "${HAL_DIR}/examples/${topology}" -maxdepth 1 -type f -name "*.hal" | sort | sed "s|^${WORKSPACE}/||"
   else
-    bash "${SCRIPTS_DIR}/diag.sh" multi stdout || true
+    find "${HAL_DIR}/examples" -maxdepth 2 -type f -name "*.hal" | sort | sed "s|^${WORKSPACE}/||"
+  fi
+}
+
+list_ini() {
+  local topology="${1:-}"
+
+  if [[ ! -d "${INI_DIR}" ]]; then
+    warn "No ini/ directory found in workspace"
+    return 0
   fi
 
-  if [[ "$SELECTED_TOPOLOGY" == "gantry" ]]; then
-    echo
-    info "Selected topology is gantry"
-    if [[ -f "${SCRIPTS_DIR}/gantry_diag.sh" ]]; then
-      info "Running gantry diagnostic..."
-      bash "${SCRIPTS_DIR}/gantry_diag.sh" || true
-    else
-      warn "gantry_diag.sh not available"
+  if [[ -n "$topology" ]]; then
+    if [[ ! -d "${INI_DIR}/${topology}" ]]; then
+      warn "No ini directory for topology: ${topology}"
+      return 0
     fi
+    find "${INI_DIR}/${topology}" -maxdepth 1 -type f -name "*.ini" | sort | sed "s|^${WORKSPACE}/||"
+  else
+    find "${INI_DIR}" -maxdepth 3 -type f -name "*.ini" | sort | sed "s|^${WORKSPACE}/||"
   fi
-
-  pause
 }
 
 # --------------------------------------------------
-# VALIDATE PROFILE
+# SELECT COMMANDS
 # --------------------------------------------------
-run_validate_profile() {
-  header
+set_profile() {
+  local input="$1"
+  local resolved
+  resolved="$(resolve_path "$input")"
+  require_file "$resolved"
 
-  if [[ ! -f "${SCRIPTS_DIR}/validate_profile.sh" ]]; then
-    warn "validate_profile.sh not found"
-    pause
-    return
-  fi
+  SELECTED_PROFILE="$resolved"
+  load_profile_metadata
+  save_state
+  ok "Profile selected: $(relpath "$SELECTED_PROFILE")"
+}
 
+set_topology() {
+  local topology="$1"
+  case "$topology" in
+    single_axis|multi_axis|gantry) ;;
+    *) die "Invalid topology: $topology" ;;
+  esac
+
+  SELECTED_TOPOLOGY="$topology"
+  save_state
+  ok "Topology selected: $SELECTED_TOPOLOGY"
+}
+
+set_hal() {
+  local input="$1"
+  local resolved
+  resolved="$(resolve_path "$input")"
+  require_file "$resolved"
+
+  SELECTED_HAL="$resolved"
+  save_state
+  ok "HAL selected: $(relpath "$SELECTED_HAL")"
+}
+
+set_ini() {
+  local input="$1"
+  local resolved
+  resolved="$(resolve_path "$input")"
+  require_file "$resolved"
+
+  SELECTED_INI="$resolved"
+  save_state
+  ok "INI selected: $(relpath "$SELECTED_INI")"
+}
+
+apply_suggestions() {
   if ! profile_present; then
-    warn "Select a profile first"
-    pause
-    return
+    die "No profile selected"
   fi
 
-  bash "${SCRIPTS_DIR}/validate_profile.sh" "$SELECTED_PROFILE" || true
-  pause
+  local suggested_hal suggested_ini suggested_topology
+  suggested_hal="$(suggest_hal_for_profile || true)"
+  suggested_ini="$(suggest_ini_for_profile || true)"
+
+  if [[ -n "$suggested_hal" ]]; then
+    suggested_topology="$(suggest_topology_from_path "$suggested_hal")"
+  elif [[ -n "$suggested_ini" ]]; then
+    suggested_topology="$(suggest_topology_from_path "$suggested_ini")"
+  else
+    suggested_topology=""
+  fi
+
+  [[ -n "$suggested_topology" ]] && SELECTED_TOPOLOGY="$suggested_topology"
+  [[ -n "$suggested_hal" ]] && SELECTED_HAL="$suggested_hal"
+  [[ -n "$suggested_ini" ]] && SELECTED_INI="$suggested_ini"
+
+  save_state
+  ok "Suggestions applied"
+  print_status
 }
 
 # --------------------------------------------------
-# WORKSPACE INFO
+# WRAPPERS FOR EXISTING TOOLS
 # --------------------------------------------------
-show_workspace() {
-  header
-  echo -e "${CYAN}--------------------- [ Workspace Info ] ---------------------${RESET}"
-  echo
+run_diag() {
+  local mode="${1:-auto}"
+  local output="${2:-stdout}"
+  "${SCRIPTS_DIR}/diag.sh" "$mode" "$output"
+}
 
-  printf " %-16s %s\n" "WORKSPACE:" "$WORKSPACE"
-  printf " %-16s %s\n" "DOCS:"      "$DOCS_DIR"
-  printf " %-16s %s\n" "SCRIPTS:"   "$SCRIPTS_DIR"
-  printf " %-16s %s\n" "PROFILES:"  "$PROFILES_DIR"
-  printf " %-16s %s\n" "HAL:"       "$HAL_DIR"
-  printf " %-16s %s\n" "INI:"       "$INI_DIR"
-  printf " %-16s %s\n" "LOGS:"      "$LOG_DIR"
-  echo
+run_validate_profile() {
+  local target="${1:-}"
+  if [[ -z "$target" ]]; then
+    if profile_present; then
+      target="$SELECTED_PROFILE"
+    else
+      die "No profile provided and no profile selected"
+    fi
+  else
+    target="$(resolve_path "$target")"
+  fi
 
-  printf " %-24s %b\n" "docs/:"                "$(status_mark_dir "${DOCS_DIR}")"
-  printf " %-24s %b\n" "scripts/:"             "$(status_mark_dir "${SCRIPTS_DIR}")"
-  printf " %-24s %b\n" "profiles/:"            "$(status_mark_dir "${PROFILES_DIR}")"
-  printf " %-24s %b\n" "hal/:"                 "$(status_mark_dir "${HAL_DIR}")"
-  printf " %-24s %b\n" "ini/:"                 "$(status_mark_dir "${INI_DIR}")"
-  printf " %-24s %b\n" "logs/:"                "$(status_mark_dir "${LOG_DIR}")"
-  printf " %-24s %b\n" "diag.sh:"              "$(status_mark_file "${SCRIPTS_DIR}/diag.sh")"
-  printf " %-24s %b\n" "validate_profile.sh:"  "$(status_mark_file "${SCRIPTS_DIR}/validate_profile.sh")"
-  printf " %-24s %b\n" "framework.sh:"         "$(status_mark_file "${SCRIPTS_DIR}/framework.sh")"
-  printf " %-24s %b\n" "gantry_diag.sh:"       "$(status_mark_file "${SCRIPTS_DIR}/gantry_diag.sh")"
-  echo
+  require_file "$target"
+  "${SCRIPTS_DIR}/validate_profile.sh" "$target"
+}
 
-  pause
+run_validate_driver_profile() {
+  local target="${1:-}"
+  if [[ -z "$target" ]]; then
+    if profile_present; then
+      target="$SELECTED_PROFILE"
+    else
+      die "No profile provided and no profile selected"
+    fi
+  else
+    target="$(resolve_path "$target")"
+  fi
+
+  require_file "$target"
+  "${SCRIPTS_DIR}/validate_driver_profile.sh" "$target"
+}
+
+run_tests() {
+  "${SCRIPTS_DIR}/run_tests.sh"
+}
+
+# --------------------------------------------------
+# USAGE
+# --------------------------------------------------
+usage() {
+  cat <<EOF
+LinuxCNC CiA402 Framework CLI
+
+Usage:
+  scripts/framework.sh <command> [args]
+
+Commands:
+  help
+  status
+  clear-state
+
+  list-profiles [driver|reference|validated]
+  list-hal [single_axis|multi_axis|gantry]
+  list-ini [single_axis|multi_axis|gantry]
+
+  set-profile <path>
+  set-topology <single_axis|multi_axis|gantry>
+  set-hal <path>
+  set-ini <path>
+
+  suggest
+  apply-suggestions
+  cross-check
+
+  diag [auto|single|multi] [stdout|log]
+  validate-profile [path]
+  validate-driver-profile [path]
+  run-tests
+
+Examples:
+  scripts/framework.sh status
+  scripts/framework.sh list-profiles
+  scripts/framework.sh list-profiles driver
+  scripts/framework.sh set-profile profiles/driver/leadshine_el7_ec.driver.yaml
+  scripts/framework.sh set-topology single_axis
+  scripts/framework.sh set-hal hal/examples/single_axis/example_single_axis_generic.hal
+  scripts/framework.sh set-ini /path/to/your/linuxcnc/config.ini
+  scripts/framework.sh suggest
+  scripts/framework.sh apply-suggestions
+  scripts/framework.sh cross-check
+  scripts/framework.sh diag
+  scripts/framework.sh diag auto log
+  scripts/framework.sh validate-profile
+  scripts/framework.sh validate-driver-profile
+  scripts/framework.sh run-tests
+
+Notes:
+  - State is stored in: ${STATE_FILE}
+  - INI selection is optional and user-specific.
+  - Gantry remains experimental.
+  - This CLI does not modify HAL wiring by itself.
+EOF
 }
 
 # --------------------------------------------------
@@ -643,39 +615,70 @@ show_workspace() {
 load_state
 load_profile_metadata
 
-while true; do
-  header
-  status_panel
+cmd="${1:-help}"
+shift || true
 
-  echo "1) Select profile"
-  echo "2) Select topology"
-  echo "3) Select HAL example"
-  echo "4) Select INI"
-  echo "5) Profile-assisted setup"
-  echo "6) Cross-check selections"
-  echo "7) Guided workflow"
-  echo "8) Validate selected profile"
-  echo "9) Show workspace"
-  echo
-  echo "0) Exit"
-  echo
-
-  read -rp "Select option: " opt
-
-  case "$opt" in
-    1) select_profile_menu ;;
-    2) select_topology ;;
-    3) select_hal ;;
-    4) select_ini ;;
-    5) profile_assisted_setup ;;
-    6) cross_check_selections ;;
-    7) guided_workflow ;;
-    8) run_validate_profile ;;
-    9) show_workspace ;;
-    0) exit 0 ;;
-    *)
-      fail "Invalid option"
-      pause
-      ;;
-  esac
-done
+case "$cmd" in
+  help|-h|--help)
+    usage
+    ;;
+  status)
+    print_status
+    ;;
+  clear-state)
+    clear_state
+    ok "Framework state cleared"
+    ;;
+  list-profiles)
+    list_profiles "${1:-}"
+    ;;
+  list-hal)
+    list_hal "${1:-}"
+    ;;
+  list-ini)
+    list_ini "${1:-}"
+    ;;
+  set-profile)
+    [[ $# -ge 1 ]] || die "set-profile requires a path"
+    set_profile "$1"
+    ;;
+  set-topology)
+    [[ $# -ge 1 ]] || die "set-topology requires a topology"
+    set_topology "$1"
+    ;;
+  set-hal)
+    [[ $# -ge 1 ]] || die "set-hal requires a path"
+    set_hal "$1"
+    ;;
+  set-ini)
+    [[ $# -ge 1 ]] || die "set-ini requires a path"
+    set_ini "$1"
+    ;;
+  suggest)
+    print_suggestions
+    ;;
+  apply-suggestions)
+    apply_suggestions
+    ;;
+  cross-check)
+    cross_check
+    ;;
+  diag)
+    run_diag "${1:-auto}" "${2:-stdout}"
+    ;;
+  validate-profile)
+    run_validate_profile "${1:-}"
+    ;;
+  validate-driver-profile)
+    run_validate_driver_profile "${1:-}"
+    ;;
+  run-tests)
+    run_tests
+    ;;
+  *)
+    fail "Unknown command: $cmd"
+    echo
+    usage
+    exit 2
+    ;;
+esac

@@ -6,9 +6,9 @@ identity:
   vendor: stepperonline
   model: A6-EC
   transport: ethercat
-  workspace_base: ~/linuxcnc/configs/opc_validation
+  workspace_base: auto
   intended_path: profiles/driver/stepperonline_a6_ec.driver.yaml
-  description: Stepperonline A6-EC EtherCAT CiA402 driver integration contract for the opc_validation framework
+  description: Stepperonline A6-EC EtherCAT CiA402 driver integration contract for the CiA402 framework
 
 contract:
   declarative_only: true

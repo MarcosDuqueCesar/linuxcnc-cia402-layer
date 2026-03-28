@@ -13,7 +13,7 @@ OUTBOX_DIR="${WORKSPACE}/outbox"
 mkdir -p "$LOG_DIR" "$OUTBOX_DIR"
 
 # --------------------------------------------------
-# ARGS
+# DEFAULT ARGS
 # --------------------------------------------------
 MODE="${1:-auto}"        # auto | single | multi
 OUTPUT="${2:-stdout}"    # stdout | log
@@ -23,6 +23,62 @@ timestamp() {
 }
 
 logfile="${LOG_DIR}/diag_$(timestamp).log"
+
+# --------------------------------------------------
+# USAGE / VALIDATION
+# --------------------------------------------------
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/diag.sh [mode] [output]
+
+Modes:
+  auto    Auto-discover watchdog instances (default)
+  single  Same discovery logic, labeled as single-axis intent
+  multi   Same discovery logic, labeled as multi-axis intent
+
+Outputs:
+  stdout  Print to terminal only (default)
+  log     Print to terminal and save to logs/
+
+Examples:
+  scripts/diag.sh
+  scripts/diag.sh auto stdout
+  scripts/diag.sh single log
+  scripts/diag.sh multi stdout
+
+Notes:
+  - This script is passive: it does not modify HAL state.
+  - Missing pins are shown as N/A.
+  - If no motion watchdog is found, raw CiA402-related pins are still shown.
+EOF
+}
+
+validate_args() {
+  case "$MODE" in
+    auto|single|multi) ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "ERROR: invalid mode: $MODE" >&2
+      echo >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+
+  case "$OUTPUT" in
+    stdout|log) ;;
+    *)
+      echo "ERROR: invalid output: $OUTPUT" >&2
+      echo >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+}
 
 # --------------------------------------------------
 # HELPERS
@@ -101,6 +157,31 @@ print_cia402_raw() {
   echo
 }
 
+print_header() {
+  echo "===== DIAG START ====="
+  echo "workspace=$WORKSPACE"
+  echo "mode=$MODE"
+  echo "output=$OUTPUT"
+  echo
+}
+
+print_no_watchdog_message() {
+  echo "No motion watchdog instances found in HAL."
+  echo "Raw CiA402-related pins will be shown if available."
+  echo
+}
+
+print_summary() {
+  local count="$1"
+  echo "----- SUMMARY -----"
+  echo "watchdog_count=$count"
+  echo
+}
+
+print_footer() {
+  echo "===== DIAG END ====="
+}
+
 run_diag() {
   local watchdogs=()
   local wd
@@ -108,15 +189,12 @@ run_diag() {
 
   mapfile -t watchdogs < <(discover_watchdogs)
 
-  echo "===== DIAG START ====="
-  echo "MODE=$MODE"
-  echo
+  print_header
 
   if [ "${#watchdogs[@]}" -eq 0 ]; then
-    echo "No motion watchdog instances found in HAL."
-    echo
+    print_no_watchdog_message
     print_cia402_raw
-    echo "===== DIAG END ====="
+    print_footer
     return 0
   fi
 
@@ -127,22 +205,21 @@ run_diag() {
   done
   echo
 
-  echo "----- SUMMARY -----"
-  echo "watchdog_count=$count"
-  echo
+  print_summary "$count"
 
   for wd in "${watchdogs[@]}"; do
     print_axis_block "$wd" "$(axis_label_from_wd "$wd")"
   done
 
   print_cia402_raw
-
-  echo "===== DIAG END ====="
+  print_footer
 }
 
 # --------------------------------------------------
 # EXECUTION
 # --------------------------------------------------
+validate_args
+
 if [ "$OUTPUT" = "stdout" ]; then
   run_diag
 else

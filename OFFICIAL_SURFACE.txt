@@ -1,31 +1,57 @@
-OFFICIAL ENTRYPOINT:
+OFFICIAL SURFACE
 
-INI:
-- opc_validation.ini
+This file defines the intended public-facing surface of the framework.
+Anything outside this surface may be internal, experimental, or subject to change.
 
-HAL:
-- opc_validation.hal
-- custom.hal
-- hal/stub_test_modular_axis_csp_lcnc_multi_xy.hal
-- postgui_call_list.hal
+PUBLIC ENTRYPOINTS
 
-DRIVER PROFILE:
-- profiles/driver_profile.schema.yaml
-- profiles/stub_multi_xy.profile.yaml
-
-RUNNER:
-- scripts/run_tests.sh
+- scripts/framework.sh
+- scripts/diag.sh
+- scripts/validate_profile.sh
 - scripts/validate_driver_profile.sh
 
-CONTROL / DIAGNOSTIC:
-- scripts/single_axis_ctl.sh
-- scripts/diag_single_axis.sh
+PUBLIC DIRECTORIES
 
-FAULT INJECTION (OFFICIAL):
-- scripts/faultinj_test_response_timeout_x.sh
-- scripts/faultinj_test_response_timeout_y.sh
-- scripts/faultinj_test_stall_x.sh
-- scripts/faultinj_test_stall_y.sh
-- scripts/faultinj_test_tracking_x.sh
-- scripts/faultinj_test_tracking_y.sh
-- scripts/faultinj_clear_state_multi.sh
+- profiles/driver/
+- profiles/reference/
+- profiles/validated/
+- hal/examples/
+- hal/topology/
+- hal/adapters/
+- docs/
+
+HAL STRUCTURE
+
+- hal/core/         -> reusable semantic building blocks
+- hal/core_multi/   -> reusable multi-axis semantic building blocks
+- hal/topology/     -> topology composition layer
+- hal/examples/     -> user-facing HAL entrypoints
+- hal/adapters/     -> backend binding layer
+
+USER MODEL
+
+The user is expected to:
+
+1. choose or create a driver profile
+2. choose the intended topology
+3. select the corresponding HAL entrypoint
+4. integrate that HAL into their own LinuxCNC configuration
+5. use diag.sh for runtime observability
+
+IMPORTANT RULES
+
+- The framework does not create INI files automatically
+- The framework does not modify HAL automatically
+- The framework does not depend on a machine-specific INI
+- LinuxCNC configuration remains user-specific
+- Gantry remains experimental
+
+NOT PART OF THE OFFICIAL SURFACE
+
+- machine-specific INI files
+- GUI/postgui files
+- local runtime artifacts
+- logs/
+- outbox/
+- backups
+- developer-only historical files

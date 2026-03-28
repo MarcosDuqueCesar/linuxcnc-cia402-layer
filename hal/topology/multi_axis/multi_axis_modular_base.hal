@@ -6,7 +6,7 @@
 # - keep topology glue and wiring here
 #
 # NOTE:
-# - this is the modular equivalent of the legacy multi-axis harness
+# - this is the modular multi-axis topology entrypoint
 # - core logic is sourced from hal/core_multi/
 # - X and Y axes remain fully independent
 
@@ -166,3 +166,64 @@ sets home-req-y FALSE
 
 sets motion-req-x FALSE
 sets motion-req-y FALSE
+
+
+# ------------------------------------------------------------------
+# --- HOME semantic source wiring
+# ------------------------------------------------------------------
+
+net ut-owner-x        ut_x.owner    => mux_x.home-active invmon_x.home-owner home_wd_x.home-owner
+net ut-homing-x       ut_x.homing   => mux_x.home-homing home_wd_x.homing
+net home-om-x         ut_x.om       => mux_x.home-om
+net home-tp-x         ut_x.tp       => mux_x.home-tp
+
+net ut-owner-y        ut_y.owner    => mux_y.home-active invmon_y.home-owner home_wd_y.home-owner
+net ut-homing-y       ut_y.homing   => mux_y.home-homing home_wd_y.homing
+net home-om-y         ut_y.om       => mux_y.home-om
+net home-tp-y         ut_y.tp       => mux_y.home-tp
+
+# ------------------------------------------------------------------
+# --- Invmon / mux state wiring
+# ------------------------------------------------------------------
+
+net mux-sel-home-x    mux_x.sel-home => invmon_x.sel-home
+net mux-sel-csp-x     mux_x.sel-csp  => invmon_x.sel-csp
+net mux-state-x       mux_x.state    => invmon_x.mux-state
+net mux-reason-x      mux_x.reason   => invmon_x.mux-reason
+net mcsp-owner-x      mcsp_x.owner   => mux_x.csp-owner invmon_x.csp-owner
+net mcsp-ready-x      mcsp_x.ready   => invmon_x.csp-ready
+net mcsp-state-x      mcsp_x.state   => invmon_x.mcsp-state
+net mcsp-reason-x     mcsp_x.reason  => invmon_x.mcsp-reason
+net ut-state-x        ut_x.state     => invmon_x.ut-state
+net ut-reason-x       ut_x.reason    => invmon_x.ut-reason
+
+net mux-sel-home-y    mux_y.sel-home => invmon_y.sel-home
+net mux-sel-csp-y     mux_y.sel-csp  => invmon_y.sel-csp
+net mux-state-y       mux_y.state    => invmon_y.mux-state
+net mux-reason-y      mux_y.reason   => invmon_y.mux-reason
+net mcsp-owner-y      mcsp_y.owner   => mux_y.csp-owner invmon_y.csp-owner
+net mcsp-ready-y      mcsp_y.ready   => invmon_y.csp-ready
+net mcsp-state-y      mcsp_y.state   => invmon_y.mcsp-state
+net mcsp-reason-y     mcsp_y.reason  => invmon_y.mcsp-reason
+net ut-state-y        ut_y.state     => invmon_y.ut-state
+net ut-reason-y       ut_y.reason    => invmon_y.ut-reason
+
+# ------------------------------------------------------------------
+# --- CSP semantic source wiring
+# ------------------------------------------------------------------
+
+net mcsp-om-x         mcsp_x.om      => mux_x.csp-om
+net mcsp-tp-x         mcsp_x.tp      => mux_x.csp-tp
+
+net mcsp-om-y         mcsp_y.om      => mux_y.csp-om
+net mcsp-tp-y         mcsp_y.tp      => mux_y.csp-tp
+
+# ------------------------------------------------------------------
+# --- Final semantic writer: mux -> adapter
+# ------------------------------------------------------------------
+
+net om-x              mux_x.om       => adapter_x.in-opmode
+net tp-x              mux_x.tp       => adapter_x.in-target-position
+
+net om-y              mux_y.om       => adapter_y.in-opmode
+net tp-y              mux_y.tp       => adapter_y.in-target-position

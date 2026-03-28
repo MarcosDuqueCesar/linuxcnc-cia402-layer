@@ -15,12 +15,6 @@
 # - do NOT guess backend pin names as validated facts
 #
 # FRAMEWORK CONTRACT
-#   adapter.in-controlword
-#   adapter.in-opmode
-#   adapter.in-target-position
-#   adapter.out-statusword
-#   adapter.out-opmode-display
-#   adapter.out-actual-position
 #
 # LICHUAN OBJECT CONTRACT
 #   0x6040 controlword
@@ -68,13 +62,7 @@ newsig lichuan-x-actual-position s32
 # ----------------------------------------------------------------------
 # SEMANTIC SIDE <-> PROJECT-SIDE TRANSPORT SURFACE
 # ----------------------------------------------------------------------
-net lichuan-x-controlword-cmd      adapter.in-controlword      => lichuan-x-controlword
-net lichuan-x-opmode-cmd-sig       adapter.in-opmode           => lichuan-x-opmode-cmd
-net lichuan-x-target-position-cmd  adapter.in-target-position  => lichuan-x-target-position
 
-net lichuan-x-statusword-fb        lichuan-x-statusword       => adapter.out-statusword
-net lichuan-x-opmode-display-fb    lichuan-x-opmode-display   => adapter.out-opmode-display
-net lichuan-x-actual-position-fb   lichuan-x-actual-position  => adapter.out-actual-position
 
 # ----------------------------------------------------------------------
 # EXPECTED LCEC SHAPE — UNCOMMENT AFTER REAL RUNTIME CONFIRMATION
@@ -102,14 +90,8 @@ net lichuan-x-actual-position-fb   lichuan-x-actual-position  => adapter.out-act
 # OPERATIONAL RULE
 # ----------------------------------------------------------------------
 # Keep the framework authority unchanged:
-#   cw  -> adapter.in-controlword
-#   mux -> adapter.in-opmode
-#   mux -> adapter.in-target-position
 #
 # Keep the feedback return path unchanged:
-#   adapter.out-statusword
-#   adapter.out-opmode-display
-#   adapter.out-actual-position
 #
 # No direct backend hookup to cw/mux/pds/mcsp.
 #

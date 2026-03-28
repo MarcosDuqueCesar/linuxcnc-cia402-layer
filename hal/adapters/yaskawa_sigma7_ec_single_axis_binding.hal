@@ -15,12 +15,6 @@
 # - do NOT guess backend pin names as validated facts
 #
 # FRAMEWORK CONTRACT
-#   adapter.in-controlword
-#   adapter.in-opmode
-#   adapter.in-target-position
-#   adapter.out-statusword
-#   adapter.out-opmode-display
-#   adapter.out-actual-position
 #
 # SIGMA-7 OBJECT CONTRACT
 #   0x6040 controlword
@@ -68,13 +62,7 @@ newsig yaskawa-x-actual-position s32
 # ----------------------------------------------------------------------
 # SEMANTIC SIDE <-> PROJECT-SIDE TRANSPORT SURFACE
 # ----------------------------------------------------------------------
-net yaskawa-x-controlword-cmd      adapter.in-controlword      => yaskawa-x-controlword
-net yaskawa-x-opmode-cmd-sig       adapter.in-opmode           => yaskawa-x-opmode-cmd
-net yaskawa-x-target-position-cmd  adapter.in-target-position  => yaskawa-x-target-position
 
-net yaskawa-x-statusword-fb        yaskawa-x-statusword       => adapter.out-statusword
-net yaskawa-x-opmode-display-fb    yaskawa-x-opmode-display   => adapter.out-opmode-display
-net yaskawa-x-actual-position-fb   yaskawa-x-actual-position  => adapter.out-actual-position
 
 # ----------------------------------------------------------------------
 # EXPECTED LCEC SHAPE — UNCOMMENT AFTER REAL RUNTIME CONFIRMATION
@@ -102,14 +90,8 @@ net yaskawa-x-actual-position-fb   yaskawa-x-actual-position  => adapter.out-act
 # OPERATIONAL RULE
 # ----------------------------------------------------------------------
 # Keep the framework authority unchanged:
-#   cw  -> adapter.in-controlword
-#   mux -> adapter.in-opmode
-#   mux -> adapter.in-target-position
 #
 # Keep the feedback return path unchanged:
-#   adapter.out-statusword
-#   adapter.out-opmode-display
-#   adapter.out-actual-position
 #
 # No direct backend hookup to cw/mux/pds/mcsp.
 #

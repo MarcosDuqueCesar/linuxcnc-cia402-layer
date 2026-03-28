@@ -6,7 +6,7 @@
 # - keep only single-axis-specific glue here
 #
 # This file is the active single-axis topology entrypoint.
-# Legacy monolithic harness files are kept under hal/legacy/.
+# Historical harness files are not part of the public framework surface.
 
 source hal/core/cia402_base.hal
 source hal/core/cia402_faults.hal
@@ -41,7 +41,7 @@ net fault-reset-req => msg.fault-reset-req pds.fault-reset
 # ------------------------------------------------------------------
 # --- Planner -> CiA402 bridge
 # ------------------------------------------------------------------
-# Reuse the existing signal already created in opc_validation.hal:
+# Reuse the existing signal already created in the user main HAL:
 #   net xpos-cmd joint.0.motor-pos-cmd => stepgen.0.position-cmd
 
 net xpos-cmd        => ut.cmd mcsp.pos-cmd

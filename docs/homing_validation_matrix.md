@@ -35,7 +35,7 @@ Main HAL harness used:
 
 Working directory:
 
-cd ~/linuxcnc/configs/opc_validation
+cd <your-linuxcnc-workspace>
 
 LinuxCNC must be running with the servo thread active.
 

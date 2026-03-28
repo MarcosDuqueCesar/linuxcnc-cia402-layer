@@ -15,12 +15,6 @@
 # - do NOT guess backend pin names as validated facts
 #
 # FRAMEWORK CONTRACT
-#   adapter.in-controlword
-#   adapter.in-opmode
-#   adapter.in-target-position
-#   adapter.out-statusword
-#   adapter.out-opmode-display
-#   adapter.out-actual-position
 #
 # EL8 OBJECT CONTRACT
 #   0x6040 controlword
@@ -68,13 +62,7 @@ newsig el8-x-actual-position s32
 # ----------------------------------------------------------------------
 # SEMANTIC SIDE <-> PROJECT-SIDE TRANSPORT SURFACE
 # ----------------------------------------------------------------------
-net el8-x-controlword-cmd      adapter.in-controlword      => el8-x-controlword
-net el8-x-opmode-cmd-sig       adapter.in-opmode           => el8-x-opmode-cmd
-net el8-x-target-position-cmd  adapter.in-target-position  => el8-x-target-position
 
-net el8-x-statusword-fb        el8-x-statusword           => adapter.out-statusword
-net el8-x-opmode-display-fb    el8-x-opmode-display       => adapter.out-opmode-display
-net el8-x-actual-position-fb   el8-x-actual-position      => adapter.out-actual-position
 
 # ----------------------------------------------------------------------
 # EXPECTED LCEC SHAPE — UNCOMMENT AFTER REAL RUNTIME CONFIRMATION
@@ -102,14 +90,8 @@ net el8-x-actual-position-fb   el8-x-actual-position      => adapter.out-actual-
 # OPERATIONAL RULE
 # ----------------------------------------------------------------------
 # Keep the framework authority unchanged:
-#   cw  -> adapter.in-controlword
-#   mux -> adapter.in-opmode
-#   mux -> adapter.in-target-position
 #
 # Keep the feedback return path unchanged:
-#   adapter.out-statusword
-#   adapter.out-opmode-display
-#   adapter.out-actual-position
 #
 # No direct backend hookup to cw/mux/pds/mcsp.
 #

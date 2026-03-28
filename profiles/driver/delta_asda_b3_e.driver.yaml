@@ -6,9 +6,9 @@ identity:
   vendor: delta
   model: ASDA-B3-E
   transport: ethercat
-  workspace_base: ~/linuxcnc/configs/opc_validation
+  workspace_base: auto
   intended_path: profiles/driver/delta_asda_b3_e.driver.yaml
-  description: Delta ASDA-B3-E EtherCAT CiA402 driver integration contract for the opc_validation framework
+  description: Delta ASDA-B3-E EtherCAT CiA402 driver integration contract for the CiA402 framework
 
 contract:
   declarative_only: true

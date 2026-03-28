@@ -6,9 +6,9 @@ identity:
   vendor: leadshine
   model: EL8-EC
   transport: ethercat
-  workspace_base: ~/linuxcnc/configs/opc_validation
+  workspace_base: auto
   intended_path: profiles/driver/leadshine_el8_ec.driver.yaml
-  description: Leadshine EL8-EC CiA402 EtherCAT driver integration contract for the opc_validation framework
+  description: Leadshine EL8-EC CiA402 EtherCAT driver integration contract for the CiA402 framework
 
 contract:
   declarative_only: true

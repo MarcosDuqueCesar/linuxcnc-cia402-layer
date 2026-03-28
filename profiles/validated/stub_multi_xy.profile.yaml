@@ -6,7 +6,7 @@ identity:
   vendor: internal_stub
   model: cia402_backend_adapter
   transport: sim
-  workspace_base: ~/linuxcnc/configs/opc_validation
+  workspace_base: auto
   intended_path: /profiles/validated/stub_multi_xy.profile.yaml
   description: >-
     Validated internal runtime profile for the X/Y simulation harness.

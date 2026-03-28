@@ -106,7 +106,7 @@ net fault-reset-req-y => msg_y.fault-reset-req pds_y.fault-reset
 
 # ------------------------------------------------------------------
 # --- PLANNER -> CiA402 bridge per axis
-# Assumes these signals already exist in opc_validation.hal:
+# Assumes these signals already exist in the user main HAL:
 #   xpos-cmd, ypos-cmd
 # ------------------------------------------------------------------
 

@@ -1,8 +1,8 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
-id: "opc_validation/driver_profile.schema.yaml"
+id: "driver_profile.schema.yaml"
 title: "OPC Validation CiA402 Driver Profile Schema"
 description: >-
-  Formal schema for declarative CiA402 driver profiles used by the opc_validation
+  Formal schema for declarative CiA402 driver profiles used by the framework
   framework. This schema defines integration contract only. It does not define
   runtime logic, arbitration, or semantic behavior.
 type: object

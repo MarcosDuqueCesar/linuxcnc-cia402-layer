@@ -6,9 +6,9 @@ identity:
   vendor: lichuan
   model: OL57E-4A / CL57E-4A
   transport: ethercat
-  workspace_base: ~/linuxcnc/configs/opc_validation
+  workspace_base: auto
   intended_path: profiles/driver/lichuan_ol57e4a_cl57e4a_ec.driver.yaml
-  description: Lichuan OL57E-4A / CL57E-4A EtherCAT CiA402 driver integration contract for the opc_validation framework
+  description: Lichuan OL57E-4A / CL57E-4A EtherCAT CiA402 driver integration contract for the CiA402 framework
 
 contract:
   declarative_only: true

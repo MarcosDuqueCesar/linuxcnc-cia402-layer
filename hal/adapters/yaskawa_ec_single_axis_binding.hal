@@ -1,11 +1,12 @@
-# hal/adapters/stepperonline_a6_ec_single_axis_binding.hal
+# hal/adapters/yaskawa_ec_single_axis_binding.hal
 #
-# Stepperonline A6-EC single-axis real-binding scaffold
+# Yaskawa EtherCAT single-axis real-binding scaffold
 #
 # STATUS
-# - derived from A6 ESI XML + A6 profile
-# - near-final LCEC-oriented binding scaffold
+# - structural scaffold aligned with project binding standard
+# - adapter contract preserved exactly
 # - exact runtime HAL pin names still require confirmation on the real machine
+# - NOT hardware-validated in this repository stage
 #
 # IMPORTANT
 # - do NOT change core
@@ -16,7 +17,7 @@
 #
 # FRAMEWORK CONTRACT
 #
-# A6 OBJECT CONTRACT
+# CIA402 OBJECT CONTRACT
 #   0x6040 controlword
 #   0x6060 modes of operation command
 #   0x607A target position
@@ -29,10 +30,8 @@
 # - semantic instance = adapter
 #
 # IMPORTANT
-# The names below under "EXPECTED LCEC SHAPE" are the closest practical guess
-# based on common CiA402/LCEC naming style.
-# They are NOT hardware-validated until confirmed by:
-#   halcmd show pin | grep lcec
+# The names below under "EXPECTED LCEC SHAPE" are placeholders only.
+# They are NOT hardware-validated until confirmed by runtime evidence on a real machine.
 
 # ----------------------------------------------------------------------
 # RUNTIME REGISTRY — FILL/CONFIRM ON REAL MACHINE
@@ -52,12 +51,12 @@
 # ----------------------------------------------------------------------
 # DEFAULT PROJECT-SIDE SIGNALS
 # ----------------------------------------------------------------------
-newsig a6-x-controlword     u32
-newsig a6-x-opmode-cmd      s32
-newsig a6-x-target-position s32
-newsig a6-x-statusword      u32
-newsig a6-x-opmode-display  s32
-newsig a6-x-actual-position s32
+newsig yaskawa-x-controlword     u32
+newsig yaskawa-x-opmode-cmd      s32
+newsig yaskawa-x-target-position s32
+newsig yaskawa-x-statusword      u32
+newsig yaskawa-x-opmode-display  s32
+newsig yaskawa-x-actual-position s32
 
 # ----------------------------------------------------------------------
 # SEMANTIC SIDE <-> PROJECT-SIDE TRANSPORT SURFACE
@@ -67,24 +66,24 @@ newsig a6-x-actual-position s32
 # ----------------------------------------------------------------------
 # EXPECTED LCEC SHAPE — UNCOMMENT AFTER REAL RUNTIME CONFIRMATION
 # ----------------------------------------------------------------------
-# net a6-x-controlword-rt      a6-x-controlword     => lcec.0.<slave>.controlword
-# net a6-x-opmode-cmd-rt       a6-x-opmode-cmd      => lcec.0.<slave>.opmode
-# net a6-x-target-position-rt  a6-x-target-position => lcec.0.<slave>.target-position
+# net yaskawa-x-controlword-rt      yaskawa-x-controlword     => lcec.0.<slave>.controlword
+# net yaskawa-x-opmode-cmd-rt       yaskawa-x-opmode-cmd      => lcec.0.<slave>.opmode
+# net yaskawa-x-target-position-rt  yaskawa-x-target-position => lcec.0.<slave>.target-position
 #
-# net a6-x-statusword-rt       lcec.0.<slave>.statusword      => a6-x-statusword
-# net a6-x-opmode-display-rt   lcec.0.<slave>.opmode-display  => a6-x-opmode-display
-# net a6-x-actual-position-rt  lcec.0.<slave>.actual-position => a6-x-actual-position
+# net yaskawa-x-statusword-rt       lcec.0.<slave>.statusword      => yaskawa-x-statusword
+# net yaskawa-x-opmode-display-rt   lcec.0.<slave>.opmode-display  => yaskawa-x-opmode-display
+# net yaskawa-x-actual-position-rt  lcec.0.<slave>.actual-position => yaskawa-x-actual-position
 
 # ----------------------------------------------------------------------
 # ALTERNATE LCEC SHAPE — USE ONLY IF RUNTIME EXPORTS LONGER NAMES
 # ----------------------------------------------------------------------
-# net a6-x-controlword-rt      a6-x-controlword     => lcec.0.<slave>.controlword
-# net a6-x-opmode-cmd-rt       a6-x-opmode-cmd      => lcec.0.<slave>.modes-of-operation
-# net a6-x-target-position-rt  a6-x-target-position => lcec.0.<slave>.target-position
+# net yaskawa-x-controlword-rt      yaskawa-x-controlword     => lcec.0.<slave>.controlword
+# net yaskawa-x-opmode-cmd-rt       yaskawa-x-opmode-cmd      => lcec.0.<slave>.modes-of-operation
+# net yaskawa-x-target-position-rt  yaskawa-x-target-position => lcec.0.<slave>.target-position
 #
-# net a6-x-statusword-rt       lcec.0.<slave>.statusword                 => a6-x-statusword
-# net a6-x-opmode-display-rt   lcec.0.<slave>.modes-of-operation-display => a6-x-opmode-display
-# net a6-x-actual-position-rt  lcec.0.<slave>.position-actual-value      => a6-x-actual-position
+# net yaskawa-x-statusword-rt       lcec.0.<slave>.statusword                 => yaskawa-x-statusword
+# net yaskawa-x-opmode-display-rt   lcec.0.<slave>.modes-of-operation-display => yaskawa-x-opmode-display
+# net yaskawa-x-actual-position-rt  lcec.0.<slave>.position-actual-value      => yaskawa-x-actual-position
 
 # ----------------------------------------------------------------------
 # OPERATIONAL RULE
