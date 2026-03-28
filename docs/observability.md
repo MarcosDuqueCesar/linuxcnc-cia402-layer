@@ -1,57 +1,211 @@
-OBSERVABILITY — DEBUG AND VALIDATION GUIDE
+# Observability
 
-OBJECTIVE
+This document explains how to observe and diagnose the internal state of the framework during runtime.
 
-Provide a minimal and deterministic way to inspect system state.
+Observability is a core feature of the framework.
 
---------------------------------------------------
-1. CORE SIGNALS (PER AXIS)
+It allows you to understand:
 
-Motion:
-- motion_wd_x.fault
-- motion_wd_x.fault-latched
-- motion_wd_x.tracking-error
+- what the system is doing
+- why it is doing it
+- where a problem is coming from
 
-Homing:
-- home_wd_x.fault
-- home_wd_x.fault-latched
+---
 
-State:
-- ut_x.state
-- ut_x.owner
+## Core Concept
 
-Mode:
-- mcsp_x.owner
-- mux_x.sel-csp
-- mux_x.sel-home
+The framework exposes internal state through HAL signals.
 
---------------------------------------------------
-2. QUICK SNAPSHOT COMMAND
+This means:
 
-Example:
+- no black box behavior
+- all decisions are visible
+- faults are explicit
 
-halcmd getp motion_wd_x.fault
-halcmd getp motion_wd_x.fault-latched
-halcmd getp home_wd_x.fault
-halcmd getp ut_x.state
+---
 
---------------------------------------------------
-3. TESTING APPROACH
+## Primary Tool
 
-- force motion: motion-req-x
-- force homing: home-req-x
-- inject error via gain or stub
+Use:
 
---------------------------------------------------
-4. INTERPRETATION
+```
+scripts/diag.sh
+```
 
-- fault TRUE + latched TRUE → persistent failure
-- owner mismatch → arbitration issue
-- tracking error → motion deviation
+This is the main diagnostic interface.
 
---------------------------------------------------
-5. RULE
+---
 
-Observability MUST NOT change system behavior.
+## What diag.sh Shows
 
-It is read-only or external injection only.
+The diagnostic output includes:
+
+### CiA402 State (PDS)
+
+- current state
+- state transitions
+- semantic reason
+
+---
+
+### Controlword / Statusword
+
+- controlword (6040h)
+- statusword (6041h)
+
+Allows verification of:
+
+- correct state machine transitions
+- expected bit patterns
+
+---
+
+### Mode of Operation
+
+- commanded mode
+- displayed mode
+
+Ensures:
+
+- CSP active when expected
+- homing mode active when requested
+
+---
+
+### Mux (Arbitration)
+
+Shows which semantic path owns the axis:
+
+- CSP
+- HOME
+
+Rule:
+
+```
+HOME > CSP
+```
+
+---
+
+### Watchdogs
+
+The framework includes watchdogs for:
+
+- motion
+- homing
+
+They detect:
+
+- tracking errors
+- stalls
+- response timeouts
+
+---
+
+## Expected Behavior
+
+In a healthy system:
+
+- no unexpected faults
+- stable state transitions
+- correct mux ownership
+- controlword follows PDS logic
+
+---
+
+## Using Observability
+
+Typical workflow:
+
+1. Run system:
+
+```
+linuxcnc <your_ini>
+```
+
+2. Open diagnostics:
+
+```
+scripts/diag.sh
+```
+
+3. Observe:
+
+- state changes
+- ownership transitions
+- fault signals
+
+---
+
+## Fault Diagnosis
+
+The framework helps distinguish:
+
+### Framework Issue
+
+- inconsistent signals
+- invalid transitions
+- incorrect arbitration
+
+---
+
+### Configuration Issue
+
+- missing HAL links
+- wrong scaling
+- incorrect INI setup
+
+---
+
+### Hardware / Backend Issue
+
+- unstable feedback
+- EtherCAT errors
+- jitter / timing problems
+
+---
+
+## Fault Injection
+
+The framework includes fault injection tools.
+
+Location:
+
+```
+scripts/faultinj/
+```
+
+These allow testing:
+
+- tracking faults
+- stall conditions
+- response timeouts
+
+This is useful for:
+
+- validation
+- stress testing
+- debugging edge cases
+
+---
+
+## Key Advantage
+
+Unlike traditional setups:
+
+- no hidden logic
+- no silent failures
+
+Everything is observable.
+
+---
+
+## Summary
+
+Observability provides:
+
+- full visibility of runtime behavior
+- clear fault diagnosis
+- separation between logic and hardware issues
+
+It is one of the main strengths of the framework.

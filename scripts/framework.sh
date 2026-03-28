@@ -186,10 +186,10 @@ profile_present() {
 profile_read_field() {
   local field="$1"
   awk -v want="$field" '
-    BEGIN { in_profile=0 }
-    /^profile:/ { in_profile=1; next }
-    in_profile && /^[^[:space:]]/ { in_profile=0 }
-    in_profile && $1 == want ":" {
+    BEGIN { in_identity=0 }
+    /^identity:/ { in_identity=1; next }
+    in_identity && /^[^[:space:]]/ { in_identity=0 }
+    in_identity && $1 == want ":" {
       sub("^[^:]+:[[:space:]]*", "", $0)
       print $0
       exit
@@ -249,19 +249,17 @@ suggest_ini_for_profile() {
   profile_present || return 1
   [[ -d "${INI_DIR}" ]] || return 1
 
-  local profile_base vendor match
-  profile_base="$(basename_noext "$SELECTED_PROFILE")"
-  vendor="$SELECTED_PROFILE_VENDOR"
+  echo "INI is user-specific."
+  echo ""
+  echo "Use your own LinuxCNC INI and include:"
+  echo ""
+  echo "  HALFILE = <your_host_hal>"
+  echo "  HALFILE = hal/examples/..."
+  echo ""
+  echo "Examples available:"
+  find "${INI_DIR}/examples" -maxdepth 1 -type f -name "*.ini" 2>/dev/null | sed "s|^${WORKSPACE}/||"
 
-  match="$(find "${INI_DIR}" -type f -name "*${profile_base}*.ini" 2>/dev/null | head -n 1)"
-  [[ -n "$match" ]] && { echo "$match"; return 0; }
-
-  if [[ -n "$vendor" ]]; then
-    match="$(find "${INI_DIR}" -type f -name "*${vendor}*.ini" 2>/dev/null | head -n 1)"
-    [[ -n "$match" ]] && { echo "$match"; return 0; }
-  fi
-
-  return 1
+  return 0
 }
 
 # --------------------------------------------------
@@ -330,7 +328,12 @@ print_suggestions() {
 
   [[ -n "$suggested_topology" ]] && ok "Suggested topology: $suggested_topology" || warn "Suggested topology: none"
   [[ -n "$suggested_hal" ]] && ok "Suggested HAL: $(relpath "$suggested_hal")" || warn "Suggested HAL: none"
-  [[ -n "$suggested_ini" ]] && ok "Suggested INI: $(relpath "$suggested_ini")" || info "Suggested INI: none"
+if [[ -n "$suggested_ini" ]]; then
+  info "INI guidance:"
+  echo "$suggested_ini"
+else
+  info "INI guidance: none"
+fi
 }
 
 cross_check() {

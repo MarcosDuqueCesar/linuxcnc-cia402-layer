@@ -1,112 +1,107 @@
-
 # Architecture
 
-This document describes the architecture of the `linuxcnc-cia402-layer` project.
+This document describes how the `linuxcnc-cia402-layer` framework is structured and how it operates.
 
-The design separates **machine policy**, **CiA402 protocol semantics**, and **hardware transport integration**
-into independent layers.
+The architecture separates:
 
-This separation allows the CiA402 behavior to be validated in simulation and reused across
-different hardware backends without modifying LinuxCNC motion.
+- machine policy
+- CiA402 semantics
+- hardware transport
 
-LinuxCNC remains the authority for trajectory planning and coordinated motion.
+This allows the system to be:
 
-The CiA402 layer acts as a semantic bridge between LinuxCNC motion and CiA402 drives.
-
----
-
-# Architectural Overview
-
-Logical control pipeline:
-
-LinuxCNC motion
-        ↓
-machine_safety_gate
-        ↓
-cia402_pds
-        ↓
-cia402_homing
-        ↓
-cia402_cw_compose
-        ↓
-cia402_drive_adapter
-        ↓
-transport backend
-        ↓
-drive (Power Drive System)
-
-This pipeline represents the **semantic control path** between LinuxCNC and a CiA402 drive.
+- validated in simulation
+- reused across different hardware backends
+- deterministic and debuggable
 
 ---
 
-# Design Goals
+## High-Level Overview
 
-The architecture was designed with the following goals:
+```
+LinuxCNC Motion
+    ↓
+Machine Policy (machine_safety_gate)
+    ↓
+CiA402 Semantic Layer
+    ↓
+Adapter (contract boundary)
+    ↓
+Backend (simulated / EtherCAT)
+    ↓
+Drive (CiA402 Power Drive System)
+```
 
-- keep LinuxCNC as the motion authority
-- isolate CiA402 semantics from transport details
-- allow deterministic validation in simulation
-- support multiple hardware backends
-- avoid race conditions in controlword generation
-- keep responsibilities clearly separated
+LinuxCNC remains the authority for trajectory planning.
 
-This allows the project to support:
-
-- EtherCAT
-- Mesa
-- simulation harnesses
-- future transport adapters
+The framework translates motion intent into CiA402-compliant behavior.
 
 ---
 
-# Responsibility Split
+## Design Principles
 
-Each layer has a strictly defined responsibility.
+- LinuxCNC is the motion authority
+- CiA402 semantics are isolated from transport
+- Controlword has a single writer
+- Arbitration is explicit and deterministic
+- System is fully testable without hardware
+
+---
+
+## Pipeline Components
+
+The semantic pipeline is composed of:
+
+- `machine_safety_gate`
+- `cia402_pds`
+- `cia402_homing`
+- `cia402_cw_compose`
+- `cia402_drive_adapter`
+
+These components form a deterministic execution chain inside the servo thread.
+
+---
+
+## Responsibility Split
 
 | Layer | Responsibility |
 |------|----------------|
-| LinuxCNC motion | trajectory generation and motion coordination |
-| machine_safety_gate | machine policy decisions |
-| cia402_pds | DS402 Power Drive System semantic interpretation |
-| cia402_homing | homing procedure logic |
-| cia402_cw_compose | single writer of the final controlword |
-| cia402_drive_adapter | transport/backend integration |
-| backend | communication with the drive |
-| drive | execution of DS402 commands |
+| LinuxCNC motion | trajectory generation |
+| machine_safety_gate | machine policy |
+| cia402_pds | PDS state interpretation |
+| cia402_homing | homing procedure |
+| cia402_cw_compose | controlword arbitration |
+| cia402_drive_adapter | backend interface |
+| backend | communication transport |
+| drive | CiA402 execution |
 
 ---
 
-# Machine Policy Layer
+## Machine Policy Layer
 
-`machine_safety_gate` represents machine‑level policy.
+`machine_safety_gate` controls machine-level permissions.
 
-Examples of decisions made here:
+Examples:
 
-- machine enable allowed or blocked
-- homing allowed or blocked
-- reset allowed or blocked
+- enable allowed
+- homing allowed
+- fault reset allowed
 
-This layer is intentionally transport‑agnostic.
+This layer is independent from hardware transport.
 
-It can be reused with:
+Important:
 
-- EtherCAT
-- Mesa
-- simulation
-- future backends
+This is NOT a safety system and does not replace:
 
-It does **not replace certified safety systems** such as:
-
-- hardware E‑stop
+- E-stop circuits
 - STO
-- safety relay chains
+- safety relays
 
 ---
 
-# CiA402 Semantic Layer
+## CiA402 Semantic Layer
 
-The CiA402 semantic layer interprets the DS402 protocol behavior and converts it
-into clear HAL‑level signals.
+The semantic layer interprets CiA402 behavior and produces deterministic signals.
 
 Components:
 
@@ -114,189 +109,120 @@ Components:
 - `cia402_homing`
 - `cia402_cw_compose`
 
-This layer **does not depend on transport technology**.
+This layer does not depend on:
 
-It operates purely on CiA402 semantics.
+- EtherCAT
+- Mesa
+- any specific backend
 
 ---
 
-# Power Drive System Interpretation
+## Power Drive System (PDS)
 
-`cia402_pds` interprets the CiA402 **Power Drive System finite state automaton**
-from the statusword (6041h).
+`cia402_pds` interprets the CiA402 state machine from the statusword.
 
-Outputs include:
+It produces:
 
 - semantic state
-- semantic reason code
 - operation enabled flag
 - fault indication
-- base controlword intent
+- controlword intent
 
-The decoder uses masked patterns:
-
-st_6f = sw & 0x006F  
-st_4f = sw & 0x004F
-
-This approach allows compatibility with drives that implement the Quick Stop bit
-differently.
+Implementation uses masked decoding to remain compatible with different drives.
 
 ---
 
-# Procedural Layer
+## Procedural Layer
 
-Procedural components implement higher‑level drive procedures.
+Procedures implement higher-level behavior.
 
-Currently implemented:
+Currently:
 
 - `cia402_homing`
 
 Responsibilities:
 
 - request homing mode
-- generate homing start pulses
-- supervise completion
-- detect timeout and progress failures
-- expose procedural diagnostics
+- supervise execution
+- detect failure conditions
 
-Future procedures may include:
-
-- probe procedures
-- rigid tapping procedures
-- gantry synchronization helpers
-
-Procedures must **not directly write the controlword**.
+Procedures never write the controlword directly.
 
 ---
 
-# Controlword Arbitration
+## Controlword Arbitration
 
-`cia402_cw_compose` is the **single writer of the final controlword**.
+`cia402_cw_compose` is the only writer of the final controlword.
 
 It merges intent from:
 
-- `cia402_pds`
-- procedural components
+- PDS
+- procedures
 
-The resulting signal is:
+This enforces:
 
-cw_final
-
-This rule prevents a common integration error:
-
-multiple independent writers attempting to control the same controlword bits.
-
-By centralizing arbitration, the system avoids race conditions and ambiguity.
+- single-writer rule
+- no race conditions
+- deterministic control
 
 ---
 
-# Adapter Layer
+## Adapter Layer
 
-`cia402_drive_adapter` connects the semantic layer to the selected backend.
+`cia402_drive_adapter` is the boundary between framework and backend.
 
 Responsibilities:
 
-- map HAL signals to backend registers or PDOs
-- transfer statusword feedback to the semantic layer
-- forward the final controlword to the backend
+- map signals to backend
+- transfer feedback to semantic layer
 
-The adapter must remain **thin**.
-
-It must **not reinterpret DS402 states** or procedural logic.
+The adapter does not implement semantics.
 
 ---
 
-# Transport Backends
+## Backend Layer
 
-Backends implement the physical communication with the drive.
+The backend handles communication with hardware.
 
 Examples:
 
-EtherCAT  
-Mesa FPGA interface  
-simulation harness
+- EtherCAT (lcec)
+- simulation stub
 
-The semantic layer does not depend on backend implementation details.
-
----
-
-# Multi‑Axis Architecture
-
-For multi‑axis systems, the rule is:
-
-one semantic pipeline per axis.
-
-Example:
-
-axis0:
-- cia402_pds
-- cia402_homing
-- cia402_cw_compose
-- adapter mapping
-
-axis1:
-- cia402_pds
-- cia402_homing
-- cia402_cw_compose
-- adapter mapping
-
-Servo thread scheduling should group components by **stage**, not by axis.
-
-Example ordering:
-
-policy blocks  
-PDS blocks  
-procedural blocks  
-controlword compose blocks  
-adapter blocks  
-backend
-
-This maintains deterministic execution ordering.
+This layer is replaceable without changing semantics.
 
 ---
 
-# Simulation and Validation
+## Observability
 
-The project includes a HAL simulation harness using:
+The framework exposes internal state through HAL.
 
-`cia402_stub`
+Use:
 
-This allows deterministic validation of:
+```
+scripts/diag.sh
+```
 
-- PDS state transitions
-- homing procedures
-- error conditions
-- timeout behavior
+This allows inspection of:
 
-The harness makes it possible to validate semantic behavior **without real hardware**.
-
----
-
-# Architectural Properties
-
-This architecture provides several important properties:
-
-- deterministic controlword ownership
-- clear separation of responsibility
-- backend independence
-- simulation‑first validation capability
-- improved debug clarity
-- reduced integration ambiguity
-
-These properties make the project suitable for gradual evolution from
-simulation to real hardware deployment.
+- CiA402 states
+- controlword
+- statusword
+- watchdogs
+- mux behavior
 
 ---
 
-# Summary
+## Summary
 
-The architecture of `linuxcnc-cia402-layer` intentionally separates:
+The architecture enforces:
 
-- motion authority
-- machine policy
-- CiA402 semantics
-- procedural logic
-- backend integration
+- clear separation of responsibilities
+- deterministic behavior
+- hardware independence
 
-This layered design allows the CiA402 behavior to be validated independently of
-hardware and keeps the system robust against integration ambiguity.
+This allows:
+
+- validation without hardware
+- easier debugging
+- scalable multi-axis systems
