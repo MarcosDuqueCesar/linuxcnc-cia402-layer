@@ -32,15 +32,17 @@ It helps distinguish between:
 
 ## Architecture
 
+```text
 LinuxCNC Motion
-↓
+    ↓
 CiA402 Semantic Layer
-↓
+    ↓
 Adapter (contract boundary)
-↓
+    ↓
 Binding (HAL wiring)
-↓
+    ↓
 Backend (simulated / EtherCAT)
+```
 
 LinuxCNC remains the motion authority.
 
@@ -48,8 +50,10 @@ LinuxCNC remains the motion authority.
 
 ## Framework Responsibility Model
 
-Framework -> HAL + semantics + architecture  
-User      -> INI + machine configuration + hardware  
+```text
+Framework -> HAL + semantics + architecture
+User      -> INI + machine configuration + hardware
+```
 
 Important:
 
@@ -62,12 +66,15 @@ Important:
 
 See:
 
+```text
 docs/quick_start.md
+```
 
 ---
 
 ## Repository Structure
 
+```text
 hal/
   core/
   topology/
@@ -86,6 +93,7 @@ scripts/
   obs/
 
 docs/
+```
 
 ---
 
@@ -93,9 +101,27 @@ docs/
 
 Runnable simulation entry points:
 
-ini/examples/runtime_validate_xyz.ini  
-ini/examples/runtime_validate_xy.ini  
-hal/host/runtime_sim.hal  
+```text
+ini/examples/runtime_validate_xyz.ini
+ini/examples/runtime_validate_xy.ini
+hal/host/runtime_sim.hal
+```
+
+---
+
+## Build Components
+
+Before running the framework from a fresh clone, compile the realtime components:
+
+```bash
+find comp -name "*.comp" -exec halcompile --install {} \;
+```
+
+On some systems, installation may require:
+
+```bash
+find comp -name "*.comp" -exec sudo halcompile --install {} \;
+```
 
 ---
 
@@ -103,9 +129,11 @@ hal/host/runtime_sim.hal
 
 Main diagnostic tools:
 
-scripts/diag.sh  
-scripts/obs/snapshot_axis.sh x  
-scripts/obs/obs_snapshot.sh all  
+```bash
+scripts/diag.sh
+scripts/obs/snapshot_axis.sh x
+scripts/obs/obs_snapshot.sh all
+```
 
 These expose:
 
@@ -125,9 +153,17 @@ The public simulation INIs are runnable examples.
 
 Minimum HAL integration pattern:
 
+```ini
 [HAL]
 HALFILE = <your_host_hal>
 HALFILE = hal/examples/...
+```
+
+Reference examples:
+
+- `ini/examples/example_single_axis.ini`
+- `ini/examples/runtime_validate_xy.ini`
+- `ini/examples/runtime_validate_xyz.ini`
 
 ---
 
@@ -145,7 +181,7 @@ Real hardware (EtherCAT) requires:
 
 ## License
 
-See LICENSE.
+See `LICENSE`.
 
 ---
 
