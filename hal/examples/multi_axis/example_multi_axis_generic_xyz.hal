@@ -14,4 +14,4 @@
 # - this example assumes independent X, Y and Z axes
 # - all semantic loading is contained in the topology file
 
-source hal/topology/multi_axis/multi_axis_modular_xyz.hal
+source ../../hal/topology/multi_axis/multi_axis_modular_xyz.hal

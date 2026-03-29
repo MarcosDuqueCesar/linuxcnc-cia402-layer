@@ -14,4 +14,4 @@
 # - core_multi/ defines per-axis semantic blocks
 # - topology/multi_axis defines wiring and coordination
 
-source hal/topology/multi_axis/multi_axis_modular_base.hal
+source ../../hal/topology/multi_axis/multi_axis_modular_base.hal
