@@ -19,7 +19,7 @@ out_mode="${2:-stdout}"
 case "$axis_arg" in
   x|X) axes=(x) ;;
   y|Y) axes=(y) ;;
-  all|ALL) axes=(x y) ;;
+  all|ALL) axes=(x y z) ;;
   *) usage >&2; exit 1 ;;
 esac
 
