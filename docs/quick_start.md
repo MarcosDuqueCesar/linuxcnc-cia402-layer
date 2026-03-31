@@ -21,8 +21,6 @@ git clone https://github.com/MarcosDuqueCesar/linuxcnc-cia402-layer
 cd linuxcnc-cia402-layer
 ```
 
-You can also download the repository as a ZIP and extract it anywhere.
-
 ---
 
 ## 2. Build the realtime components
@@ -33,7 +31,7 @@ Compile all `.comp` files before starting LinuxCNC:
 find comp -name "*.comp" -exec halcompile --install {} \;
 ```
 
-If your system requires elevated privileges for installation:
+If required:
 
 ```bash
 find comp -name "*.comp" -exec sudo halcompile --install {} \;
@@ -41,57 +39,24 @@ find comp -name "*.comp" -exec sudo halcompile --install {} \;
 
 ---
 
-## 3. Select a driver profile
+## 3. Run simulation (minimal path)
 
-```bash
-scripts/framework.sh list-profiles
-scripts/framework.sh set-profile profiles/driver/stepperonline_a6_ec.driver.yaml
-```
-
----
-
-## 4. Select topology
-
-```bash
-scripts/framework.sh set-topology multi_axis
-```
-
----
-
-## 5. Get suggestions
-
-```bash
-scripts/framework.sh suggest
-```
-
-Expected result:
-
-- profile metadata shown correctly
-- suggested HAL example (if available)
-- INI guidance (may be empty depending on profile)
-
----
-
-## 6. Run the public simulation example
+Run directly:
 
 ```bash
 linuxcnc ini/examples/runtime_validate_xyz.ini
 ```
 
-Note:
-
-- Run this command from the repository root directory
-- The example INI files are standalone runnable configurations
-- The framework CLI does not modify or generate the INI used here
-
-This example uses:
+This example is fully self-contained and uses:
 
 - `hal/host/runtime_sim.hal`
 - `hal/examples/multi_axis/example_multi_axis_generic_xyz.hal`
 
+No hardware is required.
+
 ---
 
-## 7. Observe system state
+## 4. Observe runtime
 
 In another terminal:
 
@@ -99,7 +64,7 @@ In another terminal:
 scripts/diag.sh
 ```
 
-Optional per-axis snapshots:
+Optional:
 
 ```bash
 scripts/obs/snapshot_axis.sh x
@@ -109,8 +74,28 @@ scripts/obs/obs_snapshot.sh all
 You should see:
 
 - no watchdog faults
-- valid watchdog and motion supervision signals
-- raw CiA402 controlword/statusword paths
+- valid motion supervision signals
+- CiA402 controlword/statusword activity
+
+---
+
+## Optional: Framework CLI exploration
+
+These commands are **not required** to run the simulation above.
+
+They are useful to explore profiles and topology configuration:
+
+```bash
+scripts/framework.sh list-profiles
+scripts/framework.sh set-profile profiles/driver/stepperonline_a6_ec.driver.yaml
+scripts/framework.sh set-topology multi_axis
+scripts/framework.sh suggest
+```
+
+Note:
+
+- These commands do not modify the example INI used above
+- They are part of the framework configuration workflow, not the simulation entrypoint
 
 ---
 
@@ -122,7 +107,6 @@ The framework is now running in simulated mode.
 
 ## Notes
 
-- This quick start is runnable out-of-the-box after component compilation
-- The simulation setup is included in the repository
-- Real hardware requires proper real-time and backend configuration
-- The framework is designed to help separate framework issues from hardware/backend issues
+- The quick start is designed to work without hardware
+- Simulation is the reference validation path
+- Real hardware integration requires additional backend configuration
