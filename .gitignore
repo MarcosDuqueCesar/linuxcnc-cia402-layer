@@ -26,3 +26,6 @@ linuxcnc.var*
 # Temp
 *~
 *.tmp
+
+.framework_state
+db/
