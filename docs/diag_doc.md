@@ -218,3 +218,35 @@ Use:
 - classify behavior
 
 No guesswork — only observable behavior.
+
+---
+
+## 12. Real-World Mapping
+
+The diagnostic patterns exposed by `motion_watchdog` correspond to common real-world issues.
+
+Examples:
+
+- Drive not reaching operational state (e.g. EtherCAT not in OP)  
+  → appears as: `response-timeout`
+
+- Drive enabled but not actually moving  
+  → appears as: `response-timeout`
+
+- Intermittent communication or unstable update rate (jitter, packet loss)  
+  → appears as: `tracking-error` or `stall`
+
+- Feedback stops updating after motion starts  
+  → appears as: `stall`
+
+- Incorrect scaling or unit mismatch  
+  → appears as: `tracking-error`
+
+Important:
+
+The framework does not diagnose the transport layer directly.
+
+Instead, it classifies how transport, configuration, or hardware issues  
+manifest at the motion level.
+
+This allows consistent diagnosis independent of backend technology.

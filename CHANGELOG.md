@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## V0.9.9 — Documentation Alignment & Diagnostics Guide
+
+### Added
+- Practical diagnostics guide (`docs/diag_doc.md`) with usage, interpretation, and real-world mapping
+- Real-world mapping section linking watchdog patterns to common field issues
+
+### Changed
+- Quick start updated to simulation-first (no profile/topology required to run examples)
+- User guide aligned with runtime behavior and CLI being optional
+- Observability documentation aligned with actual `diag.sh` output (no mux explicit claims)
+- Architecture documentation updated to reflect current runtime components and adapter
+- Driver profile documentation clarified as declarative contract (not literal HAL mapping)
+- Backend contract naming made explicit in docs (adapter_{axis}.*)
+
+### Notes
+- No changes to runtime semantics or HAL behavior
+- Focus on removing ambiguity and improving onboarding for third-party users
+- Profiles remain declarative; runtime validation recommended via `halcmd` and `diag.sh`
+
+---
+
 ## V0.9.9.3 — Repository Cleanup & Structure Finalization
 
 ### Added
