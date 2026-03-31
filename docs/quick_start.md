@@ -67,8 +67,8 @@ scripts/framework.sh suggest
 Expected result:
 
 - profile metadata shown correctly
-- suggested HAL example
-- INI guidance
+- suggested HAL example (if available)
+- INI guidance (may be empty depending on profile)
 
 ---
 
@@ -77,6 +77,12 @@ Expected result:
 ```bash
 linuxcnc ini/examples/runtime_validate_xyz.ini
 ```
+
+Note:
+
+- Run this command from the repository root directory
+- The example INI files are standalone runnable configurations
+- The framework CLI does not modify or generate the INI used here
 
 This example uses:
 
@@ -103,8 +109,8 @@ scripts/obs/obs_snapshot.sh all
 You should see:
 
 - no watchdog faults
-- valid adapter feedback
-- visible CiA402 runtime state
+- valid watchdog and motion supervision signals
+- raw CiA402 controlword/statusword paths
 
 ---
 

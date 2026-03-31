@@ -25,9 +25,9 @@ Machine Policy (machine_safety_gate)
     ↓
 CiA402 Semantic Layer
     ↓
-Adapter (contract boundary)
+Adapter (backend boundary)
     ↓
-Backend (simulated / EtherCAT)
+Backend (simulation / external transport)
     ↓
 Drive (CiA402 Power Drive System)
 ```
@@ -42,7 +42,7 @@ The framework translates motion intent into CiA402-compliant behavior.
 
 - LinuxCNC is the motion authority
 - CiA402 semantics are isolated from transport
-- Controlword has a single writer
+- Final controlword has a single writer
 - Arbitration is explicit and deterministic
 - System is fully testable without hardware
 
@@ -50,15 +50,22 @@ The framework translates motion intent into CiA402-compliant behavior.
 
 ## Pipeline Components
 
-The semantic pipeline is composed of:
+The runtime semantic pipeline includes (non-exhaustive):
 
 - `machine_safety_gate`
 - `cia402_pds`
 - `cia402_homing`
+- `cia402_motion_csp`
+- `cia402_axis_semantic_mux`
+- `cia402_invariant_monitor`
 - `cia402_cw_compose`
-- `cia402_drive_adapter`
+- `cia402_backend_adapter`
 
 These components form a deterministic execution chain inside the servo thread.
+
+Note:
+
+The exact composition may vary depending on topology (single axis, multi-axis, etc.), but the controlword path and arbitration remain consistent.
 
 ---
 
@@ -70,8 +77,10 @@ These components form a deterministic execution chain inside the servo thread.
 | machine_safety_gate | machine policy |
 | cia402_pds | PDS state interpretation |
 | cia402_homing | homing procedure |
-| cia402_cw_compose | controlword arbitration |
-| cia402_drive_adapter | backend interface |
+| cia402_motion_csp | CSP motion semantics |
+| cia402_axis_semantic_mux | arbitration between semantic sources |
+| cia402_cw_compose | final controlword composition |
+| cia402_backend_adapter | backend interface (virtual or real) |
 | backend | communication transport |
 | drive | CiA402 execution |
 
@@ -103,10 +112,13 @@ This is NOT a safety system and does not replace:
 
 The semantic layer interprets CiA402 behavior and produces deterministic signals.
 
-Components:
+Core components include:
 
 - `cia402_pds`
 - `cia402_homing`
+- `cia402_motion_csp`
+- `cia402_axis_semantic_mux`
+- `cia402_invariant_monitor`
 - `cia402_cw_compose`
 
 This layer does not depend on:
@@ -146,7 +158,7 @@ Responsibilities:
 - supervise execution
 - detect failure conditions
 
-Procedures never write the controlword directly.
+Procedures do not write the final backend controlword directly.
 
 ---
 
@@ -158,6 +170,7 @@ It merges intent from:
 
 - PDS
 - procedures
+- motion / mux arbitration
 
 This enforces:
 
@@ -169,12 +182,12 @@ This enforces:
 
 ## Adapter Layer
 
-`cia402_drive_adapter` is the boundary between framework and backend.
+`cia402_backend_adapter` is the boundary between framework and backend.
 
 Responsibilities:
 
-- map signals to backend
-- transfer feedback to semantic layer
+- map semantic signals to backend interface
+- transfer feedback to the semantic layer
 
 The adapter does not implement semantics.
 
@@ -182,12 +195,13 @@ The adapter does not implement semantics.
 
 ## Backend Layer
 
-The backend handles communication with hardware.
+The backend handles communication with hardware or simulation.
 
-Examples:
+Current validated backend:
 
-- EtherCAT (lcec)
-- simulation stub
+- simulation (via `cia402_backend_adapter`)
+
+Other backends (e.g. EtherCAT/LCEC) are not part of the core runtime path and require explicit binding.
 
 This layer is replaceable without changing semantics.
 
@@ -205,11 +219,14 @@ scripts/diag.sh
 
 This allows inspection of:
 
-- CiA402 states
-- controlword
-- statusword
-- watchdogs
-- mux behavior
+- watchdog state
+- motion supervision signals
+- controlword / statusword paths
+- selected raw CiA402 signals
+
+Note:
+
+The diagnostics focus on essential runtime signals and do not expose all internal components (e.g. full mux internals).
 
 ---
 

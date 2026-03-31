@@ -135,13 +135,19 @@ scripts/obs/snapshot_axis.sh x
 scripts/obs/obs_snapshot.sh all
 ```
 
-These expose:
+These provide direct visibility into runtime behavior, including:
 
-- CiA402 state
-- watchdog status
-- mux ownership
-- adapter feedback
-- per-axis runtime state
+- Per-axis watchdog state (fault, stall, response-timeout, tracking-error)
+- Motion supervision signals (pos-cmd vs pos-fb, motion-req, armed)
+- Tracking error limits and thresholds
+- Raw CiA402 signal paths (controlword/statusword between mux and adapter)
+
+Notes:
+
+- The diagnostics are passive (read-only) and do not modify system state
+- Output is based on HAL pin inspection and reflects real runtime behavior
+- Advanced internal signals (e.g. mux arbitration internals or full adapter state)
+  are not fully expanded and are intentionally kept minimal for clarity
 
 ---
 
