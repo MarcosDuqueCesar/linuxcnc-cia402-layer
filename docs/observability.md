@@ -19,7 +19,7 @@ The framework exposes internal state through HAL signals.
 This means:
 
 - no black box behavior
-- all decisions are visible
+- critical decisions are visible
 - faults are explicit
 
 ---
@@ -42,9 +42,12 @@ The diagnostic output includes:
 
 ### CiA402 State (PDS)
 
-- current state
-- state transitions
-- semantic reason
+- current state (raw/derived)
+- observable state transitions
+
+Note:
+
+High-level semantic reasoning is inferred from signals, not explicitly printed.
 
 ---
 
@@ -60,30 +63,36 @@ Allows verification of:
 
 ---
 
-### Mode of Operation
+### Mode of Operation (partial visibility)
 
-- commanded mode
-- displayed mode
+Mode-related behavior can be inferred from:
 
-Ensures:
+- controlword transitions
+- motion behavior
 
-- CSP active when expected
-- homing mode active when requested
+Note:
+
+Explicit mode signals are not fully expanded in diag.sh output.
 
 ---
 
-### Mux (Arbitration)
+### Arbitration (implicit)
 
-Shows which semantic path owns the axis:
+Arbitration effects can be inferred indirectly from:
 
-- CSP
-- HOME
+- controlword behavior
+- motion activity
+- homing vs CSP transitions
 
 Rule:
 
 ```
 HOME > CSP
 ```
+
+Note:
+
+Mux internals are not explicitly exposed by diag.sh.
 
 ---
 
@@ -108,8 +117,8 @@ In a healthy system:
 
 - no unexpected faults
 - stable state transitions
-- correct mux ownership
 - controlword follows PDS logic
+- watchdogs remain inactive during normal operation
 
 ---
 
@@ -132,8 +141,8 @@ scripts/diag.sh
 3. Observe:
 
 - state changes
-- ownership transitions
-- fault signals
+- controlword / statusword evolution
+- watchdog signals
 
 ---
 
@@ -145,7 +154,7 @@ The framework helps distinguish:
 
 - inconsistent signals
 - invalid transitions
-- incorrect arbitration
+- incorrect arbitration behavior (inferred)
 
 ---
 
@@ -196,7 +205,7 @@ Unlike traditional setups:
 - no hidden logic
 - no silent failures
 
-Everything is observable.
+All critical runtime signals are observable.
 
 ---
 
@@ -204,7 +213,7 @@ Everything is observable.
 
 Observability provides:
 
-- full visibility of runtime behavior
+- visibility of runtime behavior
 - clear fault diagnosis
 - separation between logic and hardware issues
 

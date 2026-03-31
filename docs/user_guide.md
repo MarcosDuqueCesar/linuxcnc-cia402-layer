@@ -6,17 +6,51 @@ It assumes you have already completed the Quick Start and have a working simulat
 
 ---
 
-## 1. Basic Workflow
+## 1. Recommended Workflow
 
-The framework is used in three steps:
+The framework should be approached in this order:
 
-1. Select a driver profile
-2. Select a topology
-3. Use a HAL example with your INI
+1. Run a simulation example (reference flow)
+2. Observe runtime behavior using diagnostics
+3. Then explore profiles and topology (optional)
 
 ---
 
-## 2. Selecting a Profile
+## 2. Running the Reference System
+
+Run:
+
+```
+linuxcnc ini/examples/runtime_validate_xyz.ini
+```
+
+Then in another terminal:
+
+```
+scripts/diag.sh
+```
+
+This is the canonical entry point and does not require hardware.
+
+---
+
+## 3. Understanding diag.sh
+
+The diagnostic tool provides visibility into:
+
+- watchdog state (fault, stall, response-timeout, tracking-error)
+- motion supervision signals (pos-cmd vs pos-fb, motion-req, armed)
+- controlword / statusword paths
+
+Expected behavior:
+
+- No unexpected faults
+- Stable state transitions
+- Controlword follows CiA402 state machine
+
+---
+
+## 4. Profiles (Optional)
 
 List available profiles:
 
@@ -37,9 +71,14 @@ A profile defines:
 - Scaling rules
 - Backend contract
 
+Note:
+
+- Profile selection is part of the framework CLI workflow
+- It does not affect the example INI used in simulation
+
 ---
 
-## 3. Selecting a Topology
+## 5. Topology (Optional)
 
 ```
 scripts/framework.sh set-topology multi_axis
@@ -51,11 +90,11 @@ Common options:
 - multi_axis  → X/Y/Z setups
 - gantry      → experimental
 
-Topology defines how axes are organized and how arbitration works.
+Topology defines axis organization and arbitration behavior.
 
 ---
 
-## 4. Using HAL Examples
+## 6. Using HAL Examples
 
 HAL examples are located in:
 
@@ -72,18 +111,18 @@ Examples:
 These files already:
 
 - Instantiate the semantic pipeline
-- Connect mux, CSP, homing
+- Connect CSP, homing, arbitration
 - Connect adapter boundary
 
 You typically DO NOT modify core logic.
 
 ---
 
-## 5. INI Integration
+## 7. INI Integration
 
 The INI file is user-specific.
 
-Minimum requirement:
+Minimum pattern:
 
 ```
 [HAL]
@@ -95,40 +134,7 @@ Important:
 
 - First HALFILE → your machine / host HAL
 - Second HALFILE → framework example
-
-Order matters.
-
----
-
-## 6. Running the System
-
-```
-linuxcnc <your_ini_file>
-```
-
-Then in another terminal:
-
-```
-scripts/diag.sh
-```
-
----
-
-## 7. Understanding diag.sh
-
-The diagnostic tool shows:
-
-- CiA402 state (PDS)
-- controlword / statusword
-- mux selection (HOME vs CSP)
-- watchdog states
-
-Expected behavior:
-
-- No unexpected faults
-- Stable state transitions
-- mux selects correct owner
-- controlword follows state machine
+- Order matters
 
 ---
 
@@ -146,7 +152,7 @@ Homing:
 
 - Has priority over CSP
 - Controlled via semantic path
-- mux ensures arbitration (HOME > CSP)
+- Arbitration is handled internally
 
 ---
 
@@ -164,7 +170,7 @@ These are visible in:
 motion_wd_* pins
 ```
 
-The goal is to make it clear whether a problem comes from:
+The goal is to clearly identify whether issues come from:
 
 - framework logic
 - configuration
@@ -172,15 +178,13 @@ The goal is to make it clear whether a problem comes from:
 
 ---
 
-## 10. Working Without Hardware
+## 10. Simulation vs Real Hardware
 
-The framework can run fully simulated:
+Simulation uses:
 
-- backend is virtual
-- motion pipeline is active
-- watchdogs are functional
+- virtual backend (cia402_backend_adapter)
 
-This allows validation before connecting real drives.
+This allows full validation without hardware.
 
 ---
 
@@ -188,30 +192,21 @@ This allows validation before connecting real drives.
 
 When integrating hardware:
 
-1. Install EtherCAT (lcec)
-2. Load hardware configuration
-3. Inspect pins:
+- configure backend (e.g. EtherCAT / LCEC)
+- create or adapt HAL bindings
+- map required signals (controlword, statusword, position, opmode)
+
+Inspect pins:
 
 ```
-halcmd show pin | grep lcec
-```
-
-4. Update binding in:
-
-```
-hal/adapters/
-```
-
-5. Validate again using:
-
-```
-scripts/diag.sh
+halcmd show pin | grep -E "lcec|cia402|adapter"
 ```
 
 Important:
 
-- System must have good real-time performance
-- High jitter can break motion and EtherCAT
+- Binding is not part of the simulation path
+- Adapter defines the signal contract
+- Good real-time performance is required
 
 ---
 
@@ -219,8 +214,8 @@ Important:
 
 - Do not modify core components
 - Do not create multiple writers for controlword
-- Do not bypass mux arbitration
-- Do not mix semantic layers with backend logic
+- Do not bypass arbitration
+- Do not mix semantics with backend logic
 
 ---
 
@@ -232,10 +227,9 @@ Check:
 
 - HAL loaded correctly
 - No missing pins
-- Correct profile selected
-- INI references correct HAL files
+- Correct INI references
 
-Then check:
+Then inspect:
 
 ```
 scripts/diag.sh
@@ -246,9 +240,9 @@ scripts/diag.sh
 ## 14. Next Steps
 
 - Explore different profiles
-- Test fault injection scripts
+- Use fault injection scripts
 - Integrate real hardware
-- Read architecture documentation
+- Review architecture documentation
 
 ---
 
@@ -256,13 +250,12 @@ scripts/diag.sh
 
 The framework provides:
 
-- Semantic layer (CiA402)
+- CiA402 semantic layer
 - HAL pipeline
-- Diagnostics
+- observability
 
 The user provides:
 
 - INI
 - machine configuration
 - hardware integration
-
