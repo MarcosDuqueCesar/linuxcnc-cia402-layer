@@ -16,7 +16,6 @@ RESET="\e[0m"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-DOCS_DIR="${WORKSPACE}/docs"
 SCRIPTS_DIR="${WORKSPACE}/scripts"
 PROFILES_DIR="${WORKSPACE}/profiles"
 HAL_DIR="${WORKSPACE}/hal"
@@ -89,7 +88,8 @@ timestamp() {
 run_with_log() {
   local name="$1"
   shift
-  local file="${LOG_DIR}/${name}_$(timestamp).log"
+  local file
+  file="${LOG_DIR}/${name}_$(timestamp).log"
   info "Logging to: $file"
   "$@" | tee "$file"
 }
@@ -97,7 +97,7 @@ run_with_log() {
 relpath() {
   local p="$1"
   if [[ "$p" == "${WORKSPACE}"* ]]; then
-    echo "${p#$WORKSPACE/}"
+    echo "${p#"$WORKSPACE"/}"
   else
     echo "$p"
   fi
@@ -326,14 +326,24 @@ print_suggestions() {
   echo "  model  : ${SELECTED_PROFILE_MODEL:-<unknown>}"
   echo
 
-  [[ -n "$suggested_topology" ]] && ok "Suggested topology: $suggested_topology" || warn "Suggested topology: none"
-  [[ -n "$suggested_hal" ]] && ok "Suggested HAL: $(relpath "$suggested_hal")" || warn "Suggested HAL: none"
-if [[ -n "$suggested_ini" ]]; then
-  info "INI guidance:"
-  echo "$suggested_ini"
-else
-  info "INI guidance: none"
-fi
+  if [[ -n "$suggested_topology" ]]; then
+    ok "Suggested topology: $suggested_topology"
+  else
+    warn "Suggested topology: none"
+  fi
+
+  if [[ -n "$suggested_hal" ]]; then
+    ok "Suggested HAL: $(relpath "$suggested_hal")"
+  else
+    warn "Suggested HAL: none"
+  fi
+
+  if [[ -n "$suggested_ini" ]]; then
+    info "INI guidance:"
+    echo "$suggested_ini"
+  else
+    info "INI guidance: none"
+  fi
 }
 
 cross_check() {
@@ -550,10 +560,6 @@ run_validate_driver_profile() {
   "${SCRIPTS_DIR}/validate_driver_profile.sh" "$target"
 }
 
-run_tests() {
-  "${SCRIPTS_DIR}/run_tests.sh"
-}
-
 # --------------------------------------------------
 # USAGE
 # --------------------------------------------------
@@ -585,7 +591,6 @@ Commands:
   diag [auto|single|multi] [stdout|log]
   validate-profile [path]
   validate-driver-profile [path]
-  run-tests
 
 Examples:
   scripts/framework.sh status
@@ -602,7 +607,6 @@ Examples:
   scripts/framework.sh diag auto log
   scripts/framework.sh validate-profile
   scripts/framework.sh validate-driver-profile
-  scripts/framework.sh run-tests
 
 Notes:
   - State is stored in: ${STATE_FILE}
@@ -674,9 +678,6 @@ case "$cmd" in
     ;;
   validate-driver-profile)
     run_validate_driver_profile "${1:-}"
-    ;;
-  run-tests)
-    run_tests
     ;;
   *)
     fail "Unknown command: $cmd"
