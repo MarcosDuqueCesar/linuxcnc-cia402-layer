@@ -21,7 +21,7 @@ A driver profile describes:
 - drive identity (vendor, model)
 - supported CiA402 modes
 - required signals
-- scaling rules
+- scaling rules (conceptual bridge)
 - backend contract
 - integration constraints
 
@@ -73,19 +73,19 @@ Declares what the drive supports:
 
 ## Backend Contract
 
-Defines required signals between framework and backend:
+Defines required signals between framework and backend.
 
-Inputs (to drive):
+Naming follows a consistent pattern:
 
-- controlword
-- operation mode
-- target position
+adapter_{axis}.in-controlword  
+adapter_{axis}.in-opmode  
+adapter_{axis}.in-target-position  
 
-Outputs (from drive):
+adapter_{axis}.out-statusword  
+adapter_{axis}.out-opmode-display  
+adapter_{axis}.out-actual-position  
 
-- statusword
-- operation mode display
-- actual position
+These signals form the integration boundary.
 
 ---
 
@@ -101,29 +101,47 @@ Important rule:
 
 ## Scaling
 
-Defines how values are converted:
+Defines how values are conceptually converted:
 
 - raw counts → framework units
 - feedback scaling
 - command scaling
 
+Important:
+
+Scaling definitions represent a conceptual bridge.
+
+The actual HAL implementation may include additional stages such as:
+
+- filtering (e.g. apf)
+- intermediate conversion
+- fault injection paths
+- watchdog-specific signals
+
+Always verify the real signal path using HAL.
+
 ---
 
 ## How Profiles Are Used
 
-Typical workflow:
+Profiles are optional for initial usage.
 
-1. Select a profile:
+Recommended workflow:
 
-scripts/framework.sh set-profile profiles/driver/<profile>.yaml
+1. Run simulation example (INI + HAL)
+2. Validate runtime behavior (diag.sh)
+3. Then explore profiles and topology (optional)
 
-2. Select topology:
+Example commands:
 
-scripts/framework.sh set-topology multi_axis
+scripts/framework.sh list-profiles  
+scripts/framework.sh set-profile profiles/driver/<profile>.yaml  
+scripts/framework.sh set-topology multi_axis  
+scripts/framework.sh suggest  
 
-3. Use suggested HAL example:
+Note:
 
-scripts/framework.sh suggest
+These commands do not affect the example INI directly.
 
 ---
 
@@ -150,10 +168,13 @@ Adapters implement those signals.
 
 ## Validation
 
-Profiles can be validated:
+Profiles are validated by comparing their declared contract
+with the actual HAL runtime.
 
-- in simulation (recommended first)
-- with real hardware
+This can be verified using:
+
+halcmd show pin  
+scripts/diag.sh  
 
 ---
 
@@ -165,6 +186,19 @@ Profiles can be validated:
 - no multiple writers
 
 Profiles must remain declarative.
+
+---
+
+## Important Note
+
+Profiles describe expected contract and semantics.
+
+They do NOT guarantee that:
+
+- component names are identical in HAL
+- intermediate stages match exactly
+
+Always validate the real runtime wiring.
 
 ---
 
